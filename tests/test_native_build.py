@@ -1,7 +1,7 @@
-"""Step 2 gate: the native _rubberband module builds, links, and runs.
+"""Step 2/3 gate: the native _rubberband module builds, links, and runs.
 
-Only engine_info() exists at this step — stretch() lands in step 3, so
-available_backends() must still report no usable backend.
+Step 3 adds stretch() alongside engine_info(), so available_backends() now
+reports "rubberband" (signalsmith is still unbuilt until step 4).
 """
 
 import pytimestretch
@@ -32,7 +32,7 @@ def test_engine_info_reports_expected_keys() -> None:
     assert len(info["source_revision"]) > 0
 
 
-def test_available_backends_still_empty() -> None:
-    # _rubberband exists but exposes no stretch() yet, so the registry
-    # still reports it (and signalsmith, not built at all) as unavailable.
-    assert pytimestretch.available_backends() == ()
+def test_available_backends_reports_rubberband_only() -> None:
+    # _rubberband now exposes stretch(); signalsmith is not built until
+    # step 4, so it stays excluded.
+    assert pytimestretch.available_backends() == ("rubberband",)

@@ -16,14 +16,26 @@ Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
-This repository is **not an audio processor yet**. The public call,
-`pytimestretch.time_stretch(audio, sample_rate, *, duration_ratio=...)`,
-validates its input and then raises `BackendUnavailableError`: the native
-Rubber Band module (upstream v4.0.0, compiled from vendored sources, no
-system library needed) builds and reports `engine_info()`, but has no
-`stretch` yet. `available_backends()` returns an empty tuple until an engine
-can process audio. Building from source needs CMake ≥ 3.24 and a C++17
-compiler. There is no PyPI release.
+**Rubber Band works; Signalsmith Stretch is next.** `time_stretch` calls
+Rubber Band v4.0.0 (R3 engine, offline) compiled from vendored sources into
+the package — no system library needed:
+
+```python
+import soundfile as sf
+import pytimestretch
+
+audio, sr = sf.read("loop.wav", dtype="float32")   # (frames, channels)
+slower = pytimestretch.time_stretch(audio, sr, duration_ratio=1.5)
+assert len(slower) == round(len(audio) * 1.5)
+```
+
+`duration_ratio` is output length / input length (> 1 = longer/slower) —
+the opposite direction of pyrubberband/librosa `rate`. The output has the
+exact computed length and the input's dtype (engines compute in float32).
+`available_backends()` reports `("rubberband",)`; `backend="signalsmith"`
+raises `BackendUnavailableError` until step 4. Blind listening has not been
+done, so no audio-quality claim is made. Building from source needs CMake
+≥ 3.24 and a C++17 compiler. There is no PyPI release.
 
 ```bash
 git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git

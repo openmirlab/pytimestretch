@@ -69,8 +69,11 @@ conversion, pinned by tests.
   pure-Python facade, so the packaging can later split (option 3) without code
   changes.
 - **Rubber Band defaults (my call):** offline mode, `OptionEngineFiner` (R3),
-  `OptionThreadingNever`, `OptionChannelsTogether`, full `study()` pass. No
-  engine options are public in this plan.
+  `OptionThreadingNever`, `OptionChannelsApart`, full `study()` pass. No
+  engine options are public in this plan. (Originally proposed
+  `OptionChannelsTogether`; step 3 measured it leaking ~−15 dBFS RMS into a
+  silent channel, breaking the contract's channel independence — see the
+  [measurements](../thoughts/2026-09-24-rubberband-binding-measurements.md).)
 - **FFT backend (my call):** Rubber Band uses its built-in FFT on
   Linux/Windows and vDSP on macOS first; vendoring FFTW is a later,
   timing-justified step. Signalsmith uses `signalsmith-linear`'s default

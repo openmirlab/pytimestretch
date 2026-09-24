@@ -319,15 +319,18 @@ def test_unknown_backend_name_raises() -> None:
         )
 
 
-def test_rubberband_unavailable_today() -> None:
+def test_signalsmith_unavailable_today() -> None:
+    # Step 3 lands rubberband's native module (see test_rubberband_unavailable_today's
+    # replacement, test_package.py::test_time_stretch_smoke); signalsmith is
+    # still unbuilt until step 4, so it must still raise BackendUnavailableError.
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(BackendUnavailableError) as excinfo:
         pytimestretch.time_stretch(
             audio, sample_rate=SAMPLE_RATE, duration_ratio=1.0,
-            backend="rubberband",
+            backend="signalsmith",
         )
     assert isinstance(excinfo.value, ImportError)
-    assert "rubberband" in str(excinfo.value)
+    assert "signalsmith" in str(excinfo.value)
 
 
 def test_no_fallback_on_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -493,9 +496,11 @@ def test_wide_but_valid_channel_count_accepted(
 
 
 def test_available_backends_returns_tuple_excluding_unbuilt_engines() -> None:
+    # Step 3 lands rubberband's native module; signalsmith stays unbuilt
+    # until step 4.
     names = pytimestretch.available_backends()
     assert isinstance(names, tuple)
-    assert "rubberband" not in names
+    assert "rubberband" in names
     assert "signalsmith" not in names
 
 
