@@ -18,18 +18,17 @@ engine-specific speed/quality preset. Each native module's
 ``SUPPORTED_QUALITY`` tuple names which of ``"high"``/``"balanced"``/
 ``"fast"`` it can honor at all — the facade (``stretch._render``) checks a
 requested ``quality`` against it and raises ``UnsupportedOptionError``
-before calling ``render()`` rather than silently aliasing. As of step 3,
-Rubber Band's ``render()`` implements native contract v2 in full: markers
-with ``K > 2`` (warp), ``pitch_scale != 1.0``, ``preserve_formants``, and
-every quality its ``SUPPORTED_QUALITY`` lists ("high"/"balanced"/"fast")
-all succeed. Signalsmith's ``render()`` (step 4) still only *implements*
-the plain two-marker, ``pitch_scale=1.0``, ``preserve_formants=False``,
-``quality="high"`` path even for qualities its own ``SUPPORTED_QUALITY``
-lists; any other combination raises ``ValueError`` (native
-``std::invalid_argument``) naming the unimplemented feature. A failed
-import is reported as ``BackendUnavailableError`` rather than leaking the
-raw ``ImportError``, so callers get a message naming the backend and how
-to fix it.
+before calling ``render()`` rather than silently aliasing. Both engines now
+implement native contract v2 in full (Rubber Band since step 3, Signalsmith
+since step 4): markers with ``K > 2`` (warp), ``pitch_scale != 1.0``,
+``preserve_formants``, and every quality each engine's own
+``SUPPORTED_QUALITY`` lists all succeed. Rubber Band lists
+``("high", "balanced", "fast")``; Signalsmith lists only
+``("high", "balanced")`` — it has no "fast"-equivalent preset in the
+library, so that name is rejected here, by the facade, before ``render()``
+is ever called. A failed import is reported as ``BackendUnavailableError``
+rather than leaking the raw ``ImportError``, so callers get a message
+naming the backend and how to fix it.
 
 Reads: .errors.
 """

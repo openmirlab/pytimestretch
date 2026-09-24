@@ -1,32 +1,61 @@
 /**
  * signalsmith_module.cpp — nanobind entry point for pytimestretch._signalsmith.
  *
- * ★ Implements the same native contract v2 as native/rubberband_module.cpp:
- * `render(buffer, sample_rate, markers, pitch_scale, preserve_formants,
- * quality) -> float32[channels, markers[-1][1]]`, capsule-owned, GIL
- * released during engine work, `std::runtime_error` on anomalies, and
- * `std::invalid_argument` (-> Python ValueError) for any
- * marker/pitch/formant/quality combination this step does not implement
- * yet (only the plain two-marker/no-pitch/no-formant/"high"-quality path
- * runs the pipeline below; steps 3/4 fill in the rest).
- * `run_signalsmith()` is the one place that knows the Signalsmith Stretch
- * pipeline (construct with a fixed seed, `presetDefault()`, `.exact()`
- * whole-buffer processing). `.exact()` already produces exactly the
- * requested output length by itself, unlike Rubber Band's two-pass offline
- * loop — except when the input is shorter than its internal seek/pre-roll
- * requirement, in which case it zero-fills instead of stretching;
- * `run_signalsmith()` zero-pads the input up past that threshold (scaling
- * the output length to match, then trimming back to the caller's
- * `target_frames`) so ordinary short clips still get real output, not
- * silence; any remaining `.exact()` failure raises instead of returning
- * its zero-fill. `render()` and `_stretch_diagnostics()` are thin callers
- * of it, sharing `validate_render()` for the contract v2 input checks (frames
- * from the buffer, target_frames from `markers[-1][1]`) so there is exactly
- * one place that knows the Signalsmith pipeline and exactly one place that
- * knows contract v2 validation. `SUPPORTED_QUALITY` names the quality
- * presets Signalsmith can honor once complete ("high"/"balanced" — no
- * "fast" equivalent per the plan); this step does not yet implement
- * "balanced", so `render()` still rejects it.
+ * ★ Implements native contract v2 in full, matching
+ * native/rubberband_module.cpp's structure: `render(buffer, sample_rate,
+ * markers, pitch_scale, preserve_formants, quality) ->
+ * float32[channels, markers[-1][1]]`, capsule-owned, GIL released during
+ * engine work, `std::runtime_error` on anomalies, `std::invalid_argument`
+ * (-> Python ValueError) for a genuinely bad `quality` name.
+ *
+ * `quality` selects the preset: "high" -> `presetDefault` (the library's
+ * documented default block/interval sizing); "balanced" -> `presetCheaper`
+ * with `splitComputation=false` (that flag trades latency for spreading a
+ * block's work across more process() calls, irrelevant to this binding's
+ * whole-buffer-at-once calls). Any other string is `std::invalid_argument`
+ * (defense in depth: the facade already rejects "fast" via
+ * `SUPPORTED_QUALITY`). `pitch_scale` is `setTransposeFactor(pitch_scale)`
+ * (no tonality limit — out of the plan's scope). `preserve_formants` calls
+ * `setFormantFactor(1, compensatePitch=true)` plus `setFormantBase(0)`
+ * (auto-detect fundamental) per the header's own "Formant compensation"
+ * section: `compensatePitch` is what makes the formant envelope track the
+ * pitch shift automatically, so a formant multiplier of 1 combined with it
+ * is "leave the envelope where it was" rather than "leave the multiplier
+ * unchanged" (which would still let the envelope drift with the pitch
+ * transpose). "shift" (the default) leaves both untouched — formants follow
+ * pitch, matching Rubber Band's `OptionFormantShifted` default.
+ *
+ * `markers` with `K == 2` keep the original `.exact()` whole-buffer path
+ * (short-input zero-pad-and-trim included), now with pitch/formant/preset
+ * applied before the call. `K > 2` (warp) instead drives ONE continuous
+ * stream, modeled directly on what `.exact()` itself does internally
+ * (`reset()` via `outputSeek()`'s pre-roll, then `process()`, then
+ * `flush()`): a single `outputSeek()` pre-roll sized from the *overall*
+ * ratio (matching `.exact()`'s own choice — the pre-roll's purpose is
+ * priming the STFT's analysis window, not tracking any one segment's
+ * ratio), then a sequence of `process()` calls whose (inputSamples,
+ * outputSamples) follow the marker segments (chunked to ~`intervalSamples()`
+ * input frames each, with each chunk's output count computed from a
+ * running cumulative round so segment-internal chunks sum to the segment's
+ * exact output span with no drift), then one final `flush()` for the tail
+ * — sized the same way `.exact()` reserves its own tail (from the pre-roll
+ * length converted through a local ratio), using the *last* segment's local
+ * ratio since that's what governs the zero-padded tail's synthesis. Markers
+ * that fall inside the initial pre-roll window (their source frame smaller
+ * than the pre-roll's frame count) cannot get their own process() boundary
+ * — there is no real input left to dedicate to them, only context already
+ * consumed by the pre-roll — so they are merged forward onto the next
+ * marker with real input to spare; this is a measured, explained floor
+ * (see the development thought), not a bug. `run_signalsmith_exact()` and
+ * `run_signalsmith_warp()` are the only two places that know the
+ * Signalsmith Stretch pipeline; `render()` and `_stretch_diagnostics()` are
+ * thin callers of whichever one `validate_render()`'s marker count selects,
+ * sharing `validate_render()` for the contract v2 input checks. Both paths
+ * share the same short-input pad-and-trim idea for buffers shorter than the
+ * pre-roll requirement (the warp path additionally scales every marker's
+ * coordinates by the same pad ratio, then trims the padded output back to
+ * `target_frames`, so the marker/frame relationship stays exact on the
+ * padded call).
  *
  * Reads: signalsmith-stretch/signalsmith-stretch.h (vendored, extern/signalsmith-stretch).
  */
@@ -40,6 +69,7 @@
 // policy); include it first so the vendored headers below compile.
 #include <cstring>
 
+#include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
@@ -66,13 +96,7 @@ using signalsmith::stretch::SignalsmithStretch;
 
 namespace {
 
-// Decided engine setup (binding-first plan, step 4): presetDefault (the
-// library's documented default block/interval sizing), no split
-// computation (that flag trades latency for spreading each block's work
-// across more process() calls — irrelevant to a single whole-buffer
-// .exact() call), no transpose/formant options (pitch stays unchanged,
-// out of scope for this step per the warp/pitch/quality plan's step 1). A
-// fixed seed makes the phase-randomization used internally for
+// A fixed seed makes the phase-randomization used internally for
 // transient/peak handling deterministic across runs, which the contract
 // suite's determinism test requires; 0x5eed is an arbitrary but memorable
 // constant, not a tuned value.
@@ -91,13 +115,30 @@ using MarkersBuffer =
     nb::ndarray<const int64_t, nb::shape<-1, 2>, nb::c_contig, nb::device::cpu>;
 
 /** Channel-indexable adapter over raw pointers, satisfying the `Inputs`/
- * `Outputs` template concept `.exact()` expects: `buffer[channel][index]`.
+ * `Outputs` template concept the engine expects: `buffer[channel][index]`.
  * `operator[]` returns a raw pointer, which already supports `[index]`. */
 template <typename T>
 struct ChannelPointers {
     std::vector<T *> ptrs;
     T *operator[](int c) const { return ptrs[static_cast<size_t>(c)]; }
 };
+
+/** A view over a ChannelPointers-like object that adds a fixed sample
+ * offset to every channel — the binding's own equivalent of the header's
+ * private `OffsetIO` (used internally by its `exact()`/`outputSeek()`, not
+ * accessible to callers), needed here to feed process() a moving window
+ * into one shared buffer across a sequence of calls without copying. */
+template <typename Base>
+struct OffsetView {
+    const Base &base;
+    long offset;
+    auto operator[](int c) const -> decltype(base[c]) { return base[c] + offset; }
+};
+
+template <typename Base>
+OffsetView<Base> offset_view(const Base &base, long offset) {
+    return OffsetView<Base>{base, offset};
+}
 
 struct StretchDiagnostics {
     bool exact_ok = false;
@@ -107,6 +148,7 @@ struct StretchDiagnostics {
     int block_samples = 0;
     int interval_samples = 0;
     size_t padded_frames = 0;
+    std::string path;  // "exact" (K == 2) or "warp" (K > 2)
 };
 
 /** Contract v2 inputs, resolved and validated by validate_render(). */
@@ -114,11 +156,45 @@ struct RenderInputs {
     size_t channels;
     size_t frames;
     size_t target_frames;
+    std::vector<std::pair<int64_t, int64_t>> markers;  // (source, target), K rows
 };
 
+/** Configure `stretch` per the resolved quality/pitch/formant options.
+ * Shared by both the exact() and warp paths so there is exactly one place
+ * that knows how contract v2's (pitch_scale, preserve_formants, quality)
+ * map onto SignalsmithStretch calls. Throws std::invalid_argument for an
+ * unknown `quality` (defense in depth; the facade already gates on
+ * SUPPORTED_QUALITY before calling render() at all). */
+void configure_engine(SignalsmithStretch<float> &stretch, size_t channels,
+                       size_t sample_rate, double pitch_scale,
+                       bool preserve_formants, const std::string &quality) {
+    if (quality == "high") {
+        stretch.presetDefault(static_cast<int>(channels),
+                               static_cast<float>(sample_rate));
+    } else if (quality == "balanced") {
+        stretch.presetCheaper(static_cast<int>(channels),
+                               static_cast<float>(sample_rate),
+                               /*splitComputation=*/false);
+    } else {
+        throw std::invalid_argument("signalsmith: quality \"" + quality +
+                                     "\" is not one of \"high\", \"balanced\"");
+    }
+    stretch.setTransposeFactor(static_cast<float>(pitch_scale));
+    if (preserve_formants) {
+        // compensatePitch=true: the header's own formant-compensation
+        // section documents this as adjusting the formant multiplier for
+        // the current pitch shift, i.e. it is what keeps the spectral
+        // envelope in place while the transpose moves the pitch — a plain
+        // multiplier of 1 without it would leave the envelope shifting
+        // along with the pitch (== "shift" behavior).
+        stretch.setFormantFactor(1.0f, /*compensatePitch=*/true);
+        stretch.setFormantBase(0);  // 0 = auto-detect fundamental
+    }
+}
+
 /**
- * Run the Signalsmith Stretch whole-buffer pipeline: construct with
- * `kSeed`, configure via `presetDefault`, and call `.exact()`.
+ * Run the Signalsmith Stretch whole-buffer pipeline for the plain
+ * two-marker case: construct with `kSeed`, configure, and call `.exact()`.
  *
  * `.exact()` requires `frames >= outputSeekLength(playbackRate)` (its
  * internal seek/pre-roll requirement); below that it zero-fills the
@@ -136,23 +212,25 @@ struct RenderInputs {
  * original `target_frames` taken from the front of that output — the
  * same "pad and trim" idea python-stretch's own bindings use by hand
  * (they predate `.exact()`); here it only engages below `.exact()`'s own
- * minimum, not on every call. Measured: even 1-frame and 10-frame inputs
- * complete with `exact_ok = true` after padding. If `.exact()` still
- * reports failure, `render()` raises rather than returning its zero-fill,
- * so the binding never passes silence off as a stretch.
+ * minimum, not on every call. If `.exact()` still reports failure,
+ * `render()` raises rather than returning its zero-fill, so the binding
+ * never passes silence off as a stretch.
  *
  * `output_data` must already be sized `channels * target_frames`,
  * C-contiguous, per-channel stride `target_frames`.
  *
  * Runs with the GIL released by the caller; touches no Python state.
  */
-StretchDiagnostics run_signalsmith(const std::vector<const float *> &input,
-                                    size_t channels, size_t frames,
-                                    size_t sample_rate, size_t target_frames,
-                                    float *output_data) {
+StretchDiagnostics run_signalsmith_exact(const std::vector<const float *> &input,
+                                          size_t channels, size_t frames,
+                                          size_t sample_rate, size_t target_frames,
+                                          double pitch_scale,
+                                          bool preserve_formants,
+                                          const std::string &quality,
+                                          float *output_data) {
     SignalsmithStretch<float> stretch(kSeed);
-    stretch.presetDefault(static_cast<int>(channels),
-                           static_cast<float>(sample_rate));
+    configure_engine(stretch, channels, sample_rate, pitch_scale,
+                      preserve_formants, quality);
 
     double duration_ratio =
         static_cast<double>(target_frames) / static_cast<double>(frames);
@@ -167,8 +245,7 @@ StretchDiagnostics run_signalsmith(const std::vector<const float *> &input,
     std::vector<const float *> proc_ptrs = input;
     bool did_pad = false;
 
-    if (seek_length > 0 &&
-        frames < static_cast<size_t>(seek_length)) {
+    if (seek_length > 0 && frames < static_cast<size_t>(seek_length)) {
         did_pad = true;
         // Margin beyond the estimated threshold: outputSeekLength() mixes
         // a float playbackRate into an int return, so the boundary it
@@ -203,6 +280,7 @@ StretchDiagnostics run_signalsmith(const std::vector<const float *> &input,
     }
 
     StretchDiagnostics diag;
+    diag.path = "exact";
     diag.exact_ok = stretch.exact(in, static_cast<int>(proc_frames), out,
                                    static_cast<int>(proc_target));
     diag.padded = did_pad;
@@ -221,20 +299,305 @@ StretchDiagnostics run_signalsmith(const std::vector<const float *> &input,
 }
 
 /**
+ * Run the marker-warp (K > 2) pipeline over an already long-enough buffer
+ * (frames >= the pre-roll requirement; run_signalsmith_warp() below pads
+ * first when that doesn't hold). `markers` is the full (source, target)
+ * list including the (0, 0) and (frames, target_frames) ends.
+ *
+ * Schedule, mirroring what `.exact()` does internally for the whole
+ * buffer:
+ *
+ *  1. `outputSeek(input, seek_len)` where `seek_len =
+ *     outputSeekLength(overall playbackRate)` — the same pre-roll `.exact()`
+ *     would use for a single-ratio stretch of this duration; the pre-roll's
+ *     job is priming the STFT analysis window with context, not tracking
+ *     any one segment's local ratio, so the overall ratio is the right
+ *     input here, same as `.exact()` uses for the whole buffer.
+ *  2. Build "checkpoints" (shifted_source, shifted_target) from the
+ *     markers: shift every source coordinate left by `seek_len` (frames
+ *     already consumed as pre-roll context, clamped at 0), and shift every
+ *     target coordinate (after the first) left by a constant
+ *     `front_reserve = round(seek_len * segment_0_local_rate)` — this is
+ *     what keeps every segment's own local (input span / output span)
+ *     ratio exactly equal to its nominal marker ratio despite the front
+ *     cut, the same algebraic cancellation that makes `.exact()`'s own
+ *     single call ratio-exact (see the function body for the derivation);
+ *     shifting only the source side (an earlier version of this function
+ *     did) leaves segment 0 inflated and every later segment deflated by
+ *     the same amount, which measured as a large constant placement error
+ *     at every marker after the first. `front_reserve` doubles as the
+ *     tail reserved for flush() at the very end (the deficit it
+ *     represents is finally repaid there); flush()'s own `playbackRate`
+ *     argument instead uses the *last* segment's local rate, since that
+ *     governs how the zero-padded tail should be synthesized. Any marker
+ *     whose shifted source coordinate does not advance past the
+ *     previous kept checkpoint (i.e. it falls entirely inside the pre-roll
+ *     window, so there is no real input left to dedicate to it) is merged
+ *     forward onto the next checkpoint that does have real input — this is
+ *     the "floor" the plan asks to measure and explain rather than paper
+ *     over.
+ *  3. For each consecutive checkpoint pair, call process() once per chunk
+ *     of ~intervalSamples() input frames, with each chunk's output count
+ *     computed from a running cumulative round (`round(consumed_in_total *
+ *     segment_output_span / segment_input_span)`) so the chunks within one
+ *     segment sum to that segment's exact output span with no drift, and
+ *     the sequence of process() calls overall consumes exactly
+ *     `frames - seek_len` input frames (all the real audio the pre-roll
+ *     didn't already absorb).
+ *  4. `flush()` for the reserved tail, using the last segment's local
+ *     ratio as its `playbackRate` argument (governs how much silent input
+ *     the tail simulates internally).
+ *
+ * Runs with the GIL released by the caller; touches no Python state.
+ */
+StretchDiagnostics run_signalsmith_warp(
+    const std::vector<const float *> &input, size_t channels, size_t frames,
+    size_t sample_rate, size_t target_frames,
+    const std::vector<std::pair<int64_t, int64_t>> &markers, double pitch_scale,
+    bool preserve_formants, const std::string &quality, float *output_data) {
+    SignalsmithStretch<float> stretch(kSeed);
+    configure_engine(stretch, channels, sample_rate, pitch_scale,
+                      preserve_formants, quality);
+
+    size_t k = markers.size();
+    double overall_rate =
+        static_cast<double>(frames) / static_cast<double>(target_frames);
+    int seek_len = stretch.outputSeekLength(static_cast<float>(overall_rate));
+    if (seek_len < 0) seek_len = 0;
+    // Caller (run_signalsmith_warp_padded) guarantees frames > seek_len.
+
+    ChannelPointers<const float> in_full{
+        std::vector<const float *>(input.begin(), input.end())};
+
+    stretch.outputSeek(in_full, seek_len);
+
+    std::vector<float> out_buf(channels * target_frames, 0.0f);
+    ChannelPointers<float> out_full;
+    out_full.ptrs.resize(channels);
+    for (size_t c = 0; c < channels; ++c) {
+        out_full.ptrs[c] = out_buf.data() + c * target_frames;
+    }
+
+    // The pre-roll's front cut (seek_len real input frames given to
+    // outputSeek() instead of process()) has to be compensated on the
+    // OUTPUT side too, or every process() call downstream of segment 0
+    // inherits a wrong local ratio — verified by measurement (see the
+    // development thought): shifting only the source coordinates (as an
+    // earlier version of this function did) left segment 0 inflated and
+    // every later segment deflated by the same constant amount, which
+    // measured as a large constant placement error at every marker after
+    // the first, not just a "floor" near the very start.
+    //
+    // The fix mirrors exact()'s own algebra. exact()'s single process()
+    // call reduces inputSamples by seek_len and outputSamples by
+    // seek_len * overall_rate together, which cancels exactly (outputIndex
+    // / inputSamples == overall_rate algebraically) — that is what keeps
+    // a single-ratio exact() call's placement accurate throughout,
+    // including near the very start. Generalizing: reduce segment 0's own
+    // *target* coordinate by seek_len * (segment 0's own local rate) —
+    // call this `front_reserve` — so segment 0's own local ratio is
+    // exactly preserved. Every later marker's target then carries that
+    // same constant `front_reserve` deficit forward (subtracting a
+    // constant from every target after the first leaves every *later*
+    // segment's own input/output span — hence its local ratio — exactly
+    // as it was before shifting, the same shift-invariance argument that
+    // already applies to the source side). The deficit is finally repaid
+    // by flush() at the very end, so `front_reserve` doubles as the
+    // reserved tail length — analogous to exact()'s own tail reservation,
+    // generalized from "the one overall rate" to "segment 0's rate",
+    // since segment 0 is where the deficit actually originates.
+    double front_rate = static_cast<double>(markers[1].second - markers[0].second) /
+                         static_cast<double>(markers[1].first - markers[0].first);
+    int64_t tail_reserve = static_cast<int64_t>(std::llround(seek_len * front_rate));
+    tail_reserve = std::max<int64_t>(tail_reserve, 1);
+    tail_reserve = std::min<int64_t>(tail_reserve, static_cast<int64_t>(target_frames) - 1);
+    int64_t process_end_output = static_cast<int64_t>(target_frames) - tail_reserve;
+
+    // flush()'s own playbackRate argument governs how it internally
+    // zero-pads to simulate the silent tail; the *last* segment's local
+    // rate is what should govern that synthesis, since that's the rate
+    // the real audio was actually running at right before the tail.
+    double last_rate = static_cast<double>(markers[k - 1].second - markers[k - 2].second) /
+                        static_cast<double>(markers[k - 1].first - markers[k - 2].first);
+
+    // Checkpoints: (shifted cumulative source, shifted target), strictly
+    // increasing in both fields. Start at (0, 0) — global input position
+    // seek_len maps to global output position 0, exactly as in exact().
+    struct Checkpoint {
+        int64_t src;  // cumulative input consumed by process() so far
+        int64_t tgt;
+    };
+    std::vector<Checkpoint> cps;
+    cps.push_back({0, 0});
+    int64_t max_src = static_cast<int64_t>(frames) - seek_len;
+    for (size_t i = 1; i + 1 < k; ++i) {
+        int64_t src = markers[i].first - seek_len;
+        int64_t tgt = markers[i].second - tail_reserve;
+        if (tgt >= process_end_output) break;  // rest absorbed into the flush tail
+        src = std::clamp<int64_t>(src, 0, max_src);
+        if (src > cps.back().src && tgt > cps.back().tgt) {
+            cps.push_back({src, tgt});
+        }
+        // else: this marker's shifted source doesn't advance past the last
+        // kept checkpoint (it's inside the pre-roll window, or its output
+        // span collapsed to zero after clamping) — merge forward by
+        // simply not giving it its own process() boundary.
+    }
+    if (cps.back().src < max_src) {
+        cps.push_back({max_src, process_end_output});
+    } else {
+        cps.back().tgt = process_end_output;
+    }
+
+    // Sequence of process() calls, chunked to ~intervalSamples() input
+    // frames per call, cumulative-rounded per segment so each segment's
+    // chunk outputs sum exactly to its output span.
+    int interval = std::max(1, stretch.intervalSamples());
+    for (size_t i = 0; i + 1 < cps.size(); ++i) {
+        int64_t seg_in = cps[i + 1].src - cps[i].src;
+        int64_t seg_out = cps[i + 1].tgt - cps[i].tgt;
+        int64_t base_in_offset = seek_len + cps[i].src;
+        int64_t base_out_offset = cps[i].tgt;
+        int64_t consumed_in = 0;
+        int64_t consumed_out = 0;
+        while (consumed_in < seg_in) {
+            int64_t chunk_in = std::min<int64_t>(interval, seg_in - consumed_in);
+            int64_t cumulative_out = static_cast<int64_t>(std::llround(
+                static_cast<double>(consumed_in + chunk_in) *
+                static_cast<double>(seg_out) / static_cast<double>(seg_in)));
+            int64_t chunk_out = cumulative_out - consumed_out;
+            stretch.process(offset_view(in_full, base_in_offset + consumed_in),
+                             static_cast<int>(chunk_in),
+                             offset_view(out_full, base_out_offset + consumed_out),
+                             static_cast<int>(chunk_out));
+            consumed_in += chunk_in;
+            consumed_out += chunk_out;
+        }
+    }
+
+    int64_t flush_len = static_cast<int64_t>(target_frames) - process_end_output;
+    stretch.flush(offset_view(out_full, process_end_output),
+                  static_cast<int>(flush_len), static_cast<float>(last_rate));
+
+    StretchDiagnostics diag;
+    diag.path = "warp";
+    diag.exact_ok = true;
+    diag.padded = false;
+    diag.padded_frames = frames;
+    diag.input_latency = stretch.inputLatency();
+    diag.output_latency = stretch.outputLatency();
+    diag.block_samples = stretch.blockSamples();
+    diag.interval_samples = stretch.intervalSamples();
+
+    for (size_t c = 0; c < channels; ++c) {
+        std::memcpy(output_data + c * target_frames, out_buf.data() + c * target_frames,
+                    target_frames * sizeof(float));
+    }
+    return diag;
+}
+
+/** Entry point for the warp path: pads (buffer and markers, proportionally
+ * scaled) when `frames` is below the pre-roll requirement, same "pad and
+ * trim" idea as the exact() path, then delegates to
+ * run_signalsmith_warp() and trims back to the caller's target_frames. */
+StretchDiagnostics run_signalsmith(
+    const std::vector<const float *> &input, size_t channels, size_t frames,
+    size_t sample_rate, size_t target_frames,
+    const std::vector<std::pair<int64_t, int64_t>> &markers, double pitch_scale,
+    bool preserve_formants, const std::string &quality, float *output_data) {
+    if (markers.size() == 2) {
+        return run_signalsmith_exact(input, channels, frames, sample_rate,
+                                      target_frames, pitch_scale,
+                                      preserve_formants, quality, output_data);
+    }
+
+    // Probe seek_len with a throwaway stretch configured the same way, to
+    // decide whether padding is needed before doing any real work.
+    SignalsmithStretch<float> probe(kSeed);
+    configure_engine(probe, channels, sample_rate, pitch_scale,
+                      preserve_formants, quality);
+    double overall_rate =
+        static_cast<double>(frames) / static_cast<double>(target_frames);
+    int seek_len = probe.outputSeekLength(static_cast<float>(overall_rate));
+    if (seek_len < 0) seek_len = 0;
+
+    if (frames > static_cast<size_t>(seek_len)) {
+        return run_signalsmith_warp(input, channels, frames, sample_rate,
+                                     target_frames, markers, pitch_scale,
+                                     preserve_formants, quality, output_data);
+    }
+
+    // Short-input branch: pad the buffer and proportionally scale every
+    // marker's coordinates by the same pad ratio, run the warp pipeline on
+    // the padded call, then trim back to target_frames — mirroring
+    // run_signalsmith_exact()'s "pad and trim" for the two-marker case.
+    size_t proc_frames = static_cast<size_t>(seek_len) +
+                          static_cast<size_t>(probe.blockSamples()) +
+                          static_cast<size_t>(probe.intervalSamples());
+    double pad_ratio = static_cast<double>(proc_frames) / static_cast<double>(frames);
+    size_t proc_target = std::max<size_t>(
+        target_frames,
+        static_cast<size_t>(std::llround(static_cast<double>(target_frames) * pad_ratio)));
+
+    std::vector<std::vector<float>> padded(channels, std::vector<float>(proc_frames, 0.0f));
+    for (size_t c = 0; c < channels; ++c) {
+        std::memcpy(padded[c].data(), input[c], frames * sizeof(float));
+    }
+    std::vector<const float *> proc_ptrs(channels);
+    for (size_t c = 0; c < channels; ++c) proc_ptrs[c] = padded[c].data();
+
+    std::vector<std::pair<int64_t, int64_t>> proc_markers;
+    proc_markers.reserve(markers.size());
+    for (auto [src, tgt] : markers) {
+        int64_t proc_src = static_cast<int64_t>(std::llround(src * pad_ratio));
+        int64_t proc_tgt = static_cast<int64_t>(std::llround(tgt * pad_ratio));
+        proc_markers.emplace_back(proc_src, proc_tgt);
+    }
+    proc_markers.front() = {0, 0};
+    proc_markers.back() = {static_cast<int64_t>(proc_frames), static_cast<int64_t>(proc_target)};
+    // Keep strictly increasing after independent rounding.
+    for (size_t i = 1; i < proc_markers.size(); ++i) {
+        if (proc_markers[i].first <= proc_markers[i - 1].first) {
+            proc_markers[i].first = proc_markers[i - 1].first + 1;
+        }
+        if (proc_markers[i].second <= proc_markers[i - 1].second) {
+            proc_markers[i].second = proc_markers[i - 1].second + 1;
+        }
+    }
+    proc_markers.back() = {static_cast<int64_t>(proc_frames), static_cast<int64_t>(proc_target)};
+
+    std::vector<float> proc_output(channels * proc_target, 0.0f);
+    StretchDiagnostics diag = run_signalsmith_warp(
+        proc_ptrs, channels, proc_frames, sample_rate, proc_target, proc_markers,
+        pitch_scale, preserve_formants, quality, proc_output.data());
+    diag.padded = true;
+    diag.padded_frames = proc_frames;
+
+    for (size_t c = 0; c < channels; ++c) {
+        std::memcpy(output_data + c * target_frames,
+                    proc_output.data() + c * proc_target, target_frames * sizeof(float));
+    }
+    return diag;
+}
+
+/**
  * Validate the shared inputs to render()/_stretch_diagnostics() and return
- * (channels, frames, target_frames). Mirrors
+ * (channels, frames, target_frames, markers). Mirrors
  * native/rubberband_module.cpp's validate_render() (each native module
  * owns its own copy of contract v2 validation; the two bindings
  * intentionally do not share a header for this): derives frames from the
  * buffer itself and target_frames from `markers[-1][1]`, checking
- * `markers[-1][0]` against the buffer's own frame count, then enforces
- * this step's behavior-preserving scope with `std::invalid_argument` for
- * any option this step does not implement yet.
+ * `markers[-1][0]` against the buffer's own frame count, and validates
+ * pitch_scale the same way Rubber Band's binding does. `quality` is
+ * resolved later, in configure_engine(), which is the single place that
+ * knows this engine's quality names.
  */
 RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
                               const MarkersBuffer &markers, double pitch_scale,
                               bool preserve_formants,
                               const std::string &quality) {
+    (void)preserve_formants;
+    (void)quality;
     size_t channels = buffer.shape(0);
     size_t frames = buffer.shape(1);
     if (channels < 1 || frames < 1) {
@@ -268,31 +631,21 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
             "signalsmith: markers[-1][1] must be >= 1, got " +
             std::to_string(marker_target));
     }
-
-    // Behavior-preserving scope for this step: only the plain two-marker,
-    // no-pitch, no-formant, "high"-quality path runs the pipeline below.
-    // Steps 3/4 implement the rest; every other combination is a genuine
-    // unimplemented feature, not a bad call, so it raises invalid_argument
-    // rather than runtime_error.
-    if (k != 2) {
-        throw std::invalid_argument(
-            "signalsmith: markers with more than two entries (warp) not "
-            "implemented yet");
-    }
-    if (pitch_scale != 1.0) {
-        throw std::invalid_argument(
-            "signalsmith: pitch_scale != 1.0 not implemented yet");
-    }
-    if (preserve_formants) {
-        throw std::invalid_argument(
-            "signalsmith: preserve_formants not implemented yet");
-    }
-    if (quality != "high") {
-        throw std::invalid_argument("signalsmith: quality \"" + quality +
-                                     "\" not implemented yet");
+    if (!std::isfinite(pitch_scale) || pitch_scale <= 0.0) {
+        throw std::runtime_error(
+            "signalsmith: pitch_scale must be finite and > 0, got " +
+            std::to_string(pitch_scale));
     }
 
-    return {channels, frames, static_cast<size_t>(marker_target)};
+    RenderInputs in;
+    in.channels = channels;
+    in.frames = frames;
+    in.target_frames = static_cast<size_t>(marker_target);
+    in.markers.reserve(k);
+    for (size_t i = 0; i < k; ++i) {
+        in.markers.emplace_back(markers(i, 0), markers(i, 1));
+    }
+    return in;
 }
 
 std::vector<const float *> channel_pointers(const InputBuffer &buffer,
@@ -322,15 +675,15 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
         {
             nb::gil_scoped_release release;
             diag = run_signalsmith(in_ptrs, in.channels, in.frames,
-                                   static_cast<size_t>(sample_rate),
-                                   in.target_frames, data);
+                                    static_cast<size_t>(sample_rate),
+                                    in.target_frames, in.markers, pitch_scale,
+                                    preserve_formants, quality, data);
         }
         if (!diag.exact_ok) {
             delete[] data;
             throw std::runtime_error(
-                "signalsmith: exact() could not process " +
-                std::to_string(in.frames) + " input frames into " +
-                std::to_string(in.target_frames) +
+                "signalsmith: could not process " + std::to_string(in.frames) +
+                " input frames into " + std::to_string(in.target_frames) +
                 " output frames (padded to " +
                 std::to_string(diag.padded_frames) + ")");
         }
@@ -342,9 +695,9 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
 }
 
 /** Measurement-only variant sharing run_signalsmith() and validate_render():
- * reports whether .exact() ran its full pipeline or hit the
- * too-short-input zero-fill path, plus the engine's input/output latency
- * and block/interval sizes, instead of the audio itself. */
+ * reports whether the exact() or streamed (warp) path ran, whether the
+ * input needed pad-and-trim, and the engine's block/interval/latency
+ * sizes, instead of the audio itself. */
 nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
                               MarkersBuffer markers, double pitch_scale,
                               bool preserve_formants, std::string quality) {
@@ -360,7 +713,8 @@ nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
         nb::gil_scoped_release release;
         diag = run_signalsmith(in_ptrs, in.channels, in.frames,
                                 static_cast<size_t>(sample_rate),
-                                in.target_frames, scratch.data());
+                                in.target_frames, in.markers, pitch_scale,
+                                preserve_formants, quality, scratch.data());
     }
 
     nb::dict info;
@@ -371,6 +725,7 @@ nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
     info["output_latency"] = diag.output_latency;
     info["block"] = diag.block_samples;
     info["interval"] = diag.interval_samples;
+    info["path"] = diag.path.c_str();
     return info;
 }
 
@@ -405,23 +760,24 @@ nb::dict engine_info() {
 
 NB_MODULE(_signalsmith, m) {
     m.doc() = "Native Signalsmith Stretch binding: engine_info() and the render() native contract v2.";
-    // Quality names Signalsmith can honor once steps 3/4 land (no "fast"
-    // equivalent per the plan); the single place that knows this engine's
-    // capability. The facade (step 2) uses it to raise
-    // UnsupportedOptionError; this step does not gate on it itself
-    // (validate_render() rejects every quality but "high" outright).
+    // Quality names Signalsmith can honor (no "fast" equivalent per the
+    // plan); the single place that knows this engine's capability. The
+    // facade (step 2) uses it to raise UnsupportedOptionError before
+    // calling render() at all; configure_engine() also enforces it itself
+    // (defense in depth).
     m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced");
     m.def("engine_info", &engine_info, "Report the compiled Signalsmith Stretch build configuration.");
     m.def("render", &render, nb::arg("buffer"), nb::arg("sample_rate"),
           nb::arg("markers"), nb::arg("pitch_scale"),
           nb::arg("preserve_formants"), nb::arg("quality"),
-          "Whole-buffer render buffer (channels, frames) float32 to "
-          "(channels, markers[-1][1]) float32 via .exact(), per native "
-          "contract v2.");
+          "Render buffer (channels, frames) float32 to "
+          "(channels, markers[-1][1]) float32 per native contract v2: "
+          ".exact() for K == 2 markers, a scheduled process()/flush() "
+          "stream for K > 2 (warp).");
     m.def("_stretch_diagnostics", &stretch_diagnostics, nb::arg("buffer"),
           nb::arg("sample_rate"), nb::arg("markers"), nb::arg("pitch_scale"),
           nb::arg("preserve_formants"), nb::arg("quality"),
           "Measurement-only: run the same pipeline as render() and report "
           "exact_ok/padded/padded_frames/input_latency/output_latency/"
-          "block/interval instead of the audio itself.");
+          "block/interval/path instead of the audio itself.");
 }

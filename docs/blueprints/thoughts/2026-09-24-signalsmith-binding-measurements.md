@@ -65,3 +65,46 @@ for listening.
    sounds best between roughly 0.75× and 1.5×, so extreme cells matter.
 2. **Short-input padding** is binding glue around `.exact()`, not an
    algorithm change. It is tested by the contract suite's short fixtures.
+
+## Step 4 of the warp plan: pitch, formants, quality, markers
+
+`render()` now applies `setTransposeFactor`, formant preservation
+(`setFormantFactor(1, compensatePitch=true)` with auto base), and
+`presetCheaper` for `quality="balanced"` (`"fast"` is unsupported). Two
+markers keep the `.exact()` path; more markers drive one continuous stream:
+one `outputSeek()` pre-roll sized from the overall ratio, `process()` calls
+chunked to about `intervalSamples()` whose output counts sum exactly per
+segment, then `flush()`. A first version left every marker after the first
+~145 ms late; the fix mirrors `.exact()`'s own algebra by shifting all
+output coordinates after the first marker by a constant pre-roll reserve.
+Markers inside the pre-roll window merge onto the next marker.
+
+**Pitch** (cents): high +2.6 / +5.3 / +4.0 (+7 st, −5 st, +7 st at ×1.5);
+balanced +2.3 / −3.9 / +8.1. Within a tenth of a semitone, but less exact
+than Rubber Band R3 (≤ 0.25 cents).
+
+**Formants** (2600 Hz peak, +5 st): shift within 0.31 %, preserve within
+1.06 % — tighter than Rubber Band on this synthetic vowel.
+
+**Speed** (4 s at ×1.5, warmed median, mono/stereo): high 295 / 479 ms,
+balanced 175 / 280 ms (~1.7× faster). A 24-marker warp of 8 s stereo: 832 ms.
+
+**Marker placement.** Steady ×1.5 click trains: within 0.05 ms. Alternating
+×0.5/×2 every 100 ms: 15/29 clicks lost, the same failure Rubber Band shows.
+Humanized clicks warped onto a grid (24 markers, max |offset| ms, no clicks
+lost), both engines from one run:
+
+| jitter | spacing | ss high | ss balanced | rb high | rb fast |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ±5 % | 100 ms | 2.8 | 6.7 | 4.6 | 7.7 |
+| ±5 % | 250 ms | 7.6 | 3.1 | 4.3 | 5.9 |
+| ±5 % | 500 ms | 4.2 | 6.9 | 10.9 | 7.9 |
+| ±20 % | 100 ms | 16.6 | 19.9 | 14.0 | 8.1 |
+| ±20 % | 250 ms | 32.0 | 9.8 | 25.2 | 6.9 |
+| ±20 % | 500 ms | 29.9 | 21.0 | 33.1 | 7.2 |
+
+At ±5 % local-ratio variation every configuration stays within ~11 ms. At
+±20 %, only Rubber Band R2 stays under 10 ms; the clicks sit exactly on
+marker boundaries, where each engine smooths the rate change around its
+processing point. Improving placement under large ratio changes is an open
+question for Paul, not a pinned guarantee.
