@@ -30,11 +30,22 @@
   [Signalsmith](thoughts/2026-09-24-signalsmith-binding-measurements.md)
   measurements.
 
-## ▶ Next — listening, licensing/docs, Linux CI
+## ✅ Shipped (local branch) — GPL licensing and Linux wheel CI
 
-- Blind listening of both bindings; GPL-2.0-or-later LICENSE/NOTICE and docs
-  (plan step 5); Linux wheel CI (step 6). See the
-  [binding-first engines plan](plans/2026-09-24-binding-first-engines.md).
+- GPL-2.0-or-later LICENSE and a NOTICE of vendored components (step 5).
+  A cibuildwheel workflow for manylinux x86_64, CPython 3.10–3.13, verified
+  locally in Docker (174 tests pass inside each wheel); not yet run on
+  GitHub because the branch is unpushed (step 6).
+
+## ▶ Next — listening, then push and first CI run
+
+- Paul's blind listening of Rubber Band, Signalsmith, and the Python
+  prototype (local page); record per-cell judgments in the measurement notes.
+- Push `feat/binding-first-engines` when Paul approves, and confirm the
+  first GitHub Actions run.
+- Open follow-ups from the measurements: `ChannelsApart` vs `ChannelsTogether`
+  on real stereo mixes, R3 speed (faster FFT or an R2 option), Rubber Band's
+  ~13 ms early peak at ×3.0.
 
 ## ⇄ Parallel — Python research lane (non-blocking)
 
