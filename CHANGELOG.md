@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prepared public GitHub source with complete installation, API, migration,
+  verification, upstream-credit and licensing documentation. PyPI publication
+  and versioned releases remain unapproved.
+- Made two host-dependent speed comparisons opt-in with `pytest -m performance`;
+  the default suite retains all audio correctness tests. A macOS x86_64/Rosetta
+  run measured Signalsmith balanced/high at 1.21x, below the previous 1.3x
+  threshold despite both presets functioning correctly.
 - Established a private, installable package scaffold and an explicit
   unimplemented audio entry point.
 - Recorded the first backend-development contract and verification gates.

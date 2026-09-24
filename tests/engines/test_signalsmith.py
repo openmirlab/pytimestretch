@@ -17,7 +17,7 @@ Below the original step-1/2/4-plain checks (impulse placement via
 SUPPORTED_QUALITY), the newer sections pin: pitch accuracy per quality, the
 one formant (2600 Hz) whose envelope estimate proved stable (same method as
 Rubber Band's own formant test), marker placement (steady ratio and the
-humanized-to-grid case) at 100/250 ms spacing, speed ordering (balanced
+humanized-to-grid case) at 100/250 ms spacing, opt-in speed ordering (balanced
 faster than high), and determinism of ``time_warp``.
 
 Reads: pytimestretch._signalsmith.
@@ -706,7 +706,9 @@ def test_marker_placement_dense_click_train_within_measured_bound(
 #   stereo: high 479.1 ms, balanced 279.6 ms
 # "balanced" is consistently faster (~1.7x) but by a smaller margin than
 # Rubber Band's "balanced" vs "high" gap (~3x) -- reported, not hidden.
-# Medians of 3 here (not 7) to keep the test fast.
+# Medians of 3 here (not 7) to keep the test fast. Run explicitly on a
+# controlled host: the macOS x86_64/Rosetta CI runner measured only 1.21x
+# once, so this host-specific 1.3x threshold is not a wheel correctness gate.
 
 
 def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:
@@ -729,6 +731,7 @@ def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:
     return float(np.median(times))
 
 
+@pytest.mark.performance
 def test_balanced_quality_is_faster_than_high_on_stereo() -> None:
     high_ms = _median_render_ms(2, "high")
     balanced_ms = _median_render_ms(2, "balanced")

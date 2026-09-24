@@ -18,7 +18,7 @@ accuracy per quality, the one formant (2600 Hz) whose envelope estimate
 proved stable across quality/mode in measurement (700/1220 Hz were too
 noisy to pin -- see the comment above ``test_formant_*``), marker
 placement at 100/250 ms spacing for steady and alternating local ratios,
-speed ordering, and ``engine_version`` via ``_stretch_diagnostics``.
+opt-in speed ordering, and ``engine_version`` via ``_stretch_diagnostics``.
 
 Reads: pytimestretch._rubberband.
 """
@@ -441,8 +441,8 @@ def test_marker_placement_alternating_ratio_within_measured_bound(
 #   stereo: high 470 ms, balanced 145.0 ms
 # "high" is unambiguously slowest in both cases (the only ordering claim
 # this plan step actually needs pinned). Medians of 3 here (not 7) to keep
-# the test fast; the gap to "high" is large enough (>=3x) that 3 samples is
-# plenty. ("fast" was also measured here (mono 73.5 ms, stereo 130.6 ms --
+# the test fast. This host-specific threshold is opt-in, not a portable
+# wheel correctness gate. ("fast" was also measured here (mono 73.5 ms, stereo 130.6 ms --
 # no real speed edge over "balanced") but was removed 2026-09-25 after
 # blind listening round 2 confirmed no audible benefit either.)
 
@@ -467,6 +467,7 @@ def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:
     return float(np.median(times))
 
 
+@pytest.mark.performance
 def test_high_quality_is_slower_than_balanced_on_stereo() -> None:
     high_ms = _median_render_ms(2, "high")
     balanced_ms = _median_render_ms(2, "balanced")

@@ -1,8 +1,7 @@
 # Opt-in macOS/Windows wheel CI, added alongside wheels.yml (Linux, always
-# on). This is a PRIVATE repo and macOS/Windows Actions minutes are billed
-# at a multiplier (macOS ~10x), so these jobs run only when explicitly
-# requested: add the "all-platforms" label to a PR, or dispatch manually
-# once this workflow is on main. There is no push trigger and this
+# on). These jobs run only when explicitly requested: add the
+# "all-platforms" label to a PR, or dispatch manually.
+# There is no push trigger and this
 # workflow never publishes anything.
 name: Wheels (all platforms)
 

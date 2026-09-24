@@ -5,11 +5,12 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "pytimestretch"
 dynamic = ["version"]
-description = "An experimental Python home for time stretching"
+description = "NumPy bindings for Rubber Band and Signalsmith time stretching and pitch shifting"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
+# The source repository is public; PyPI publication is not yet approved.
 classifiers = ["Private :: Do Not Upload"]
 maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
 dependencies = ["numpy>=1.24"]
@@ -50,6 +51,10 @@ dev = ["pytest>=8.0", "ruff>=0.9", "build>=1.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Shared CI runners (including Rosetta) cannot guarantee a speedup ratio.
+# Keep measured performance thresholds opt-in on a controlled host.
+addopts = "-m 'not performance'"
+markers = ["performance: host-dependent speed comparisons; opt in with -m performance"]
 
 [tool.ruff]
 target-version = "py310"

@@ -1,6 +1,6 @@
 # Tactus trial with an installed wheel
 
-> 2026-09-24 · **Status:** measured; listening and production adoption pending · Both native backends complete the existing Tactus production without changing unrelated stems.
+> 2026-09-24 · **Status:** measured and listened to; production adoption pending · Both native backends complete the existing Tactus production without changing unrelated stems; Paul found all listening candidates acceptable.
 
 ## Result
 
@@ -22,8 +22,14 @@ authored tail). Their file hashes match the manifests.
   drum WAV hashes; only bass and mix change.
 - Repeating the native Rubber Band default reproduces all four WAV hashes.
 - The original example's four Python source hashes remain unchanged.
-- Sample and mix differ from the old baseline. No listening preference or
-  performance comparison was established by this run.
+- Sample and mix differ from the old baseline. Paul subsequently listened
+  and found all candidates acceptable, without selecting a preferred engine.
+  No performance comparison was established by this run.
+
+After listening, Paul authorized finishing verification, merging to `main`,
+pushing, and making the GitHub repository public with a properly written
+README. This supersedes the earlier private-source gate; PyPI publication
+and versioned releases were not requested.
 
 ## Environment and source identity
 
@@ -94,7 +100,8 @@ wheel hash, source hashes and engine metadata in `evidence.json`; production
 adoption needs equivalent attribution owned by the production. This is an
 existing attribution limit, not a missing stretch API.
 
-Listening remains open: the baseline uses a different engine revision and
-configuration, so different sample/mix hashes are expected and cannot prove
-either superiority or a regression. Review the actual candidate audio before
-changing Tactus's accepted example or adopting pytimestretch as a dependency.
+Paul accepted the listening candidates in this bounded comparison. The baseline
+uses a different engine revision and configuration, so different sample/mix
+hashes are expected and cannot prove either superiority or a regression.
+Changing Tactus's accepted example or adopting pytimestretch as a dependency
+remains a separate production change.
