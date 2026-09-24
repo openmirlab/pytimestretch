@@ -21,6 +21,8 @@ from conftest import (
     WrongDtypeFakeStretch,
     WrongShapeFakeStretch,
     fake_stretch,
+    last_call,
+    register_fake_backend,
 )
 
 import pytimestretch
@@ -29,6 +31,7 @@ from pytimestretch.errors import (
     EngineError,
     InvalidAudioError,
     UnknownBackendError,
+    UnsupportedOptionError,
 )
 
 SAMPLE_RATE = 48_000
@@ -173,9 +176,7 @@ def test_stereo_channel_order_preserved(backend: str) -> None:
 
 
 def test_silence_in_silence_out_fake(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch)
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
     audio = silence(4410).astype(np.float32)
     out = pytimestretch.time_stretch(
         audio, sample_rate=SAMPLE_RATE, duration_ratio=1.5, backend="fake"
@@ -345,9 +346,7 @@ def test_backend_unavailable_wraps_import_error(
 
 
 def test_no_fallback_on_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch)
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(UnknownBackendError):
         pytimestretch.time_stretch(
@@ -359,11 +358,7 @@ def test_no_fallback_on_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None
 def test_fake_backend_engine_exception_wrapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(
-        _backends._REGISTRY, "raising-fake", lambda: RaisingFakeStretch()
-    )
+    register_fake_backend(monkeypatch, "raising-fake", RaisingFakeStretch())
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(EngineError) as excinfo:
         pytimestretch.time_stretch(
@@ -381,11 +376,7 @@ def test_fake_backend_value_error_wrapped_as_engine_error(
     # unimplemented native contract v2 option (arrives in Python as a plain
     # ValueError): it must still be wrapped as EngineError, not leak as a
     # bare ValueError, since ValueError is not itself a PytimestretchError.
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(
-        _backends._REGISTRY, "value-error-fake", lambda: ValueErrorFakeStretch()
-    )
+    register_fake_backend(monkeypatch, "value-error-fake", ValueErrorFakeStretch())
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(EngineError) as excinfo:
         pytimestretch.time_stretch(
@@ -399,11 +390,7 @@ def test_fake_backend_value_error_wrapped_as_engine_error(
 def test_fake_backend_wrong_shape_raises_engine_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(
-        _backends._REGISTRY, "wrong-shape-fake", lambda: WrongShapeFakeStretch()
-    )
+    register_fake_backend(monkeypatch, "wrong-shape-fake", WrongShapeFakeStretch())
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(EngineError):
         pytimestretch.time_stretch(
@@ -415,11 +402,7 @@ def test_fake_backend_wrong_shape_raises_engine_error(
 def test_fake_backend_wrong_dtype_raises_engine_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(
-        _backends._REGISTRY, "wrong-dtype-fake", lambda: WrongDtypeFakeStretch()
-    )
+    register_fake_backend(monkeypatch, "wrong-dtype-fake", WrongDtypeFakeStretch())
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(EngineError):
         pytimestretch.time_stretch(
@@ -515,9 +498,7 @@ def test_channels_first_array_rejected_with_transpose_hint() -> None:
 def test_wide_but_valid_channel_count_accepted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch)
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
     audio = np.zeros((100, 64), dtype=np.float32)
     out = pytimestretch.time_stretch(
         audio, SAMPLE_RATE, duration_ratio=1.0, backend="fake"
@@ -540,9 +521,7 @@ def test_available_backends_returns_tuple_of_both_engines() -> None:
 def test_available_backends_includes_injected_fake(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pytimestretch import _backends
-
-    monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch)
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
     assert "fake" in pytimestretch.available_backends()
 
 
@@ -556,3 +535,474 @@ def test_py_typed_marker_present_in_installed_package() -> None:
 
     package_dir = pathlib.Path(pytimestretch.__file__).parent
     assert (package_dir / "py.typed").is_file()
+
+
+# --- pitch_shift ------------------------------------------------------
+
+
+def test_pitch_shift_keeps_length_shape_and_dtype(backend: str) -> None:
+    # semitones=0.0 is pitch_scale=1.0, the identity two-marker case every
+    # backend (fake and real) already implements, so this runs on all of
+    # them without hitting an unimplemented-feature EngineError.
+    frames = 4410
+    audio = np.stack([silence(frames), noise(frames)], axis=1).astype(np.float32)
+    out = pytimestretch.pitch_shift(
+        audio, sample_rate=SAMPLE_RATE, semitones=0.0, backend=backend
+    )
+    assert out.shape == audio.shape
+    assert out.dtype == audio.dtype
+
+
+def test_pitch_shift_missing_semitones_raises_invalid_audio_error() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.pitch_shift(audio, SAMPLE_RATE, backend="rubberband")
+    assert "required" in str(excinfo.value)
+
+
+# --- time_warp: length and marker equivalence --------------------------
+
+
+def test_time_warp_two_marker_exact_length(backend: str) -> None:
+    # K=2 markers reduce to the same plain-stretch case every backend (fake
+    # and real) already implements.
+    frames = 4410
+    audio = sine_440(frames).astype(np.float32)
+    target = target_frames(frames, 1.5)
+    out = pytimestretch.time_warp(
+        audio, SAMPLE_RATE, markers=[(0, 0), (frames, target)], backend=backend
+    )
+    assert out.shape == (target,)
+
+
+def test_time_warp_multi_marker_exact_length_is_last_output_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
+    frames = 4410
+    audio = sine_440(frames).astype(np.float32)
+    markers = [(0, 0), (2000, 3000), (frames, 5000)]
+    out = pytimestretch.time_warp(audio, SAMPLE_RATE, markers=markers, backend="fake")
+    assert out.shape == (5000,)
+
+
+def test_time_warp_markers_list_and_ndarray_equivalent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
+    frames = 4410
+    audio = sine_440(frames).astype(np.float32)
+    markers_list = [(0, 0), (2000, 3000), (frames, 5000)]
+    markers_arr = np.array(markers_list, dtype=np.int64)
+
+    out_list = pytimestretch.time_warp(
+        audio, SAMPLE_RATE, markers=markers_list, backend="fake"
+    )
+    out_arr = pytimestretch.time_warp(
+        audio, SAMPLE_RATE, markers=markers_arr, backend="fake"
+    )
+    np.testing.assert_array_equal(out_list, out_arr)
+
+
+# --- time_warp: marker validation ---------------------------------------
+
+
+def test_time_warp_missing_markers_raises_invalid_audio_error() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, backend="rubberband")
+    assert "markers" in str(excinfo.value)
+
+
+def test_time_warp_markers_must_be_shape_kx2() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[0, 1, 2], backend="rubberband"
+        )
+
+
+def test_time_warp_markers_need_at_least_two_rows() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0)], backend="rubberband"
+        )
+
+
+def test_time_warp_markers_must_start_at_origin() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(1, 0), (10, 10)], backend="rubberband"
+        )
+    assert "(0, 0)" in str(excinfo.value)
+
+
+def test_time_warp_markers_last_source_must_equal_frame_count() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (9, 10)], backend="rubberband"
+        )
+    assert "10" in str(excinfo.value)
+
+
+def test_time_warp_markers_last_output_must_be_positive() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (10, 0)], backend="rubberband"
+        )
+
+
+@pytest.mark.parametrize(
+    "markers",
+    [
+        [(0, 0), (5, 5), (5, 8), (10, 10)],  # source repeats (5 == 5)
+        [(0, 0), (5, 5), (8, 5), (10, 10)],  # output repeats (5 == 5)
+        [(0, 0), (6, 4), (3, 8), (10, 10)],  # source decreases (6 -> 3)
+    ],
+)
+def test_time_warp_markers_must_strictly_increase(markers: list) -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, markers=markers, backend="rubberband")
+    assert "strictly increase" in str(excinfo.value)
+
+
+def test_time_warp_float_markers_rejected_with_round_hint() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0.0, 0.0), (10.0, 10.0)],
+            backend="rubberband",
+        )
+    assert "np.round" in str(excinfo.value)
+
+
+def test_time_warp_bool_markers_rejected() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=np.array([[False, False], [True, True]]),
+            backend="rubberband",
+        )
+
+
+# --- semitones / formants / quality validation --------------------------
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda audio: pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, semitones="loud",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=float("nan"), backend="rubberband"
+        ),
+        lambda audio: pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (10, 10)], semitones=True,
+            backend="rubberband",
+        ),
+    ],
+)
+def test_invalid_semitones_rejected(call) -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError):
+        call(audio)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda audio: pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, formants="nope",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=1.0, formants="nope", backend="rubberband"
+        ),
+        lambda audio: pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (10, 10)], formants="nope",
+            backend="rubberband",
+        ),
+    ],
+)
+def test_invalid_formants_rejected(call) -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        call(audio)
+    assert "formants" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda audio: pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, quality="ultra",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=1.0, quality="ultra", backend="rubberband"
+        ),
+        lambda audio: pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (10, 10)], quality="ultra",
+            backend="rubberband",
+        ),
+    ],
+)
+def test_invalid_quality_rejected(call) -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        call(audio)
+    assert "quality" in str(excinfo.value)
+
+
+# --- Argument pass-through (pitch_scale, preserve_formants, quality, markers)
+
+
+@pytest.mark.parametrize(("semitones", "expected_pitch_scale"), [(12.0, 2.0), (-12.0, 0.5)])
+def test_time_stretch_pitch_scale_recorded(
+    monkeypatch: pytest.MonkeyPatch, semitones: float, expected_pitch_scale: float
+) -> None:
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
+    audio = sine_440(1000).astype(np.float32)
+    pytimestretch.time_stretch(
+        audio, SAMPLE_RATE, duration_ratio=1.0, semitones=semitones, backend="fake"
+    )
+    assert last_call.pitch_scale == pytest.approx(expected_pitch_scale)
+
+
+def test_time_stretch_preserve_formants_and_quality_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
+    audio = sine_440(1000).astype(np.float32)
+    pytimestretch.time_stretch(
+        audio, SAMPLE_RATE, duration_ratio=1.0, formants="preserve",
+        quality="balanced", backend="fake",
+    )
+    assert last_call.preserve_formants is True
+    assert last_call.quality == "balanced"
+
+
+def test_time_warp_markers_array_passed_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_fake_backend(monkeypatch, "fake", fake_stretch)
+    frames = 100
+    audio = sine_440(frames).astype(np.float32)
+    markers = [(0, 0), (40, 50), (frames, 120)]
+    pytimestretch.time_warp(audio, SAMPLE_RATE, markers=markers, backend="fake")
+    assert last_call.markers.dtype == np.int64
+    assert last_call.markers.shape == (3, 2)
+    np.testing.assert_array_equal(last_call.markers, np.array(markers, dtype=np.int64))
+
+
+# --- UnsupportedOptionError ----------------------------------------------
+
+
+def test_unsupported_quality_raises_unsupported_option_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_fake_backend(
+        monkeypatch, "limited-fake", fake_stretch, supported_quality=("high",)
+    )
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(UnsupportedOptionError) as excinfo:
+        pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, quality="balanced",
+            backend="limited-fake",
+        )
+    assert isinstance(excinfo.value, ValueError)
+    assert "limited-fake" in str(excinfo.value)
+    assert "balanced" in str(excinfo.value)
+
+
+# --- Teaching errors: pyrubberband aliases on all three functions --------
+
+
+def test_n_steps_alias_teaches_semitones_on_time_stretch() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_stretch(audio, SAMPLE_RATE, duration_ratio=1.0, n_steps=7)
+    message = str(excinfo.value)
+    assert "n_steps" in message
+    assert "semitones" in message
+    assert "semitones=7.0" in message
+
+
+def test_n_steps_alias_teaches_semitones_on_pitch_shift() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.pitch_shift(audio, SAMPLE_RATE, n_steps=-3)
+    message = str(excinfo.value)
+    assert "n_steps" in message
+    assert "semitones" in message
+
+
+def test_n_steps_alias_teaches_semitones_on_time_warp() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, n_steps=2)
+    message = str(excinfo.value)
+    assert "n_steps" in message
+    assert "semitones" in message
+
+
+def test_time_map_alias_teaches_markers_on_time_stretch() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, time_map=[(0, 0), (10, 10)]
+        )
+    message = str(excinfo.value)
+    assert "time_map" in message
+    assert "markers" in message
+
+
+def test_time_map_alias_teaches_markers_on_pitch_shift() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.pitch_shift(audio, SAMPLE_RATE, semitones=1.0, time_map=[])
+    message = str(excinfo.value)
+    assert "time_map" in message
+    assert "markers" in message
+
+
+def test_time_map_alias_teaches_markers_on_time_warp() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, time_map=[])
+    message = str(excinfo.value)
+    assert "time_map" in message
+    assert "markers" in message
+
+
+def test_rbargs_alias_teaches_presets_on_time_stretch() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, rbargs={"foo": "bar"}
+        )
+    message = str(excinfo.value)
+    assert "rbargs" in message
+    assert "quality" in message
+    assert "formants" in message
+    assert "semitones" in message
+
+
+def test_rbargs_alias_teaches_presets_on_pitch_shift() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.pitch_shift(audio, SAMPLE_RATE, semitones=1.0, rbargs={})
+    message = str(excinfo.value)
+    assert "rbargs" in message
+
+
+def test_rbargs_alias_teaches_presets_on_time_warp() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, rbargs={})
+    message = str(excinfo.value)
+    assert "rbargs" in message
+
+
+# --- Unknown kwargs list each function's own accepted keywords -----------
+
+
+def test_unknown_kwarg_on_pitch_shift_lists_pitch_shift_keywords() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.pitch_shift(audio, SAMPLE_RATE, semitones=1.0, foo=1)
+    message = str(excinfo.value)
+    assert "semitones" in message
+    assert "formants" in message
+    assert "quality" in message
+    assert "backend" in message
+    assert "duration_ratio" not in message
+    assert "markers" not in message
+
+
+def test_unknown_kwarg_on_time_warp_lists_time_warp_keywords() -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(TypeError) as excinfo:
+        pytimestretch.time_warp(audio, SAMPLE_RATE, markers=[(0, 0), (10, 10)], foo=1)
+    message = str(excinfo.value)
+    assert "markers" in message
+    assert "semitones" in message
+    assert "formants" in message
+    assert "quality" in message
+    assert "backend" in message
+    assert "duration_ratio" not in message
+
+
+# --- All three validate before backend loading ---------------------------
+
+
+def test_pitch_shift_validates_before_backend_availability() -> None:
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.pitch_shift([1, 2, 3], SAMPLE_RATE, semitones=1.0, backend="rubberband")
+
+
+def test_time_warp_validates_before_backend_availability() -> None:
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp([1, 2, 3], SAMPLE_RATE, markers=None, backend="rubberband")
+
+
+# --- Real engines: temporary truth until steps 3/4 -----------------------
+#
+# Both native modules currently implement only the plain two-marker,
+# pitch_scale=1.0, preserve_formants=False, quality="high" path (native
+# contract v2, step 1); every other combination raises a native
+# std::invalid_argument ("not implemented yet"), wrapped as EngineError by
+# _render. This section pins that temporary behavior so it's visible when
+# steps 3/4 replace it with real pitch/formant/warp/quality support.
+
+
+def test_signalsmith_fast_quality_raises_unsupported_option_error() -> None:
+    try:
+        pytimestretch._backends.load_backend("signalsmith")
+    except pytimestretch.BackendUnavailableError:
+        pytest.skip("signalsmith is unavailable in this environment")
+    audio = sine_440(1000).astype(np.float32)
+    with pytest.raises(UnsupportedOptionError):
+        pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, quality="fast",
+            backend="signalsmith",
+        )
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=2.0, backend="rubberband"
+        ),
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=0.0, formants="preserve",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.5, quality="balanced",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.time_warp(
+            audio, SAMPLE_RATE,
+            markers=[(0, 0), (300, 400), (1000, 1200)],
+            backend="rubberband",
+        ),
+    ],
+)
+def test_rubberband_unimplemented_options_raise_engine_error(call) -> None:
+    try:
+        pytimestretch._backends.load_backend("rubberband")
+    except pytimestretch.BackendUnavailableError:
+        pytest.skip("rubberband is unavailable in this environment")
+    audio = sine_440(1000).astype(np.float32)
+    with pytest.raises(EngineError) as excinfo:
+        call(audio)
+    assert "not implemented yet" in str(excinfo.value)

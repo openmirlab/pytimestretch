@@ -30,3 +30,13 @@ class BackendUnavailableError(PytimestretchError, ImportError):
 
 class EngineError(PytimestretchError, RuntimeError):
     """Raised when a backend fails or returns output violating its contract."""
+
+
+class UnsupportedOptionError(PytimestretchError, ValueError):
+    """Raised when the requested backend cannot honor a requested option.
+
+    Distinct from ``InvalidAudioError``: the option is valid pytimestretch
+    vocabulary (e.g. ``quality="fast"``), but the *resolved backend*
+    declares it unsupported (its native module's ``SUPPORTED_QUALITY``
+    doesn't list it) — never a silent alias to a different value.
+    """

@@ -2,13 +2,22 @@
 
 Provides a test-only fake backend implementing native contract v2
 (``render(buffer, sample_rate, markers, pitch_scale, preserve_formants,
-quality) -> np.ndarray``) via per-channel linear interpolation from
-``markers[0][0]``..``markers[-1][0]`` to ``markers[0][1]``..``markers[-1][1]``,
-and a ``backend`` fixture parameterized over every registered backend name
-plus the fake, so the same suite runs against real engines once they exist
-without any changes here. The fake ignores ``pitch_scale``/
-``preserve_formants``/``quality`` (steps 3/4 give the real engines opinions
-about them); it only needs to honor the marker-derived output length.
+quality) -> np.ndarray``) via per-marker-segment linear interpolation (each
+consecutive marker pair resamples its own segment independently, so markers
+genuinely shape both the length and the placement of the output -- not just
+the two-marker plain-stretch endpoint case), plus a ``backend`` fixture
+parameterized over every registered backend name plus the fake, so the same
+suite runs against real engines once they exist without any changes here.
+The fake ignores ``pitch_scale``/``preserve_formants``/``quality`` for its
+own output (steps 3/4 give the real engines opinions about them) but
+records every argument of its last call on the module-level ``last_call``
+object, so tests can assert exactly what the facade passed through.
+
+``register_fake_backend`` wraps a render callable (and a configurable
+``SUPPORTED_QUALITY``, default all three presets) into the ``Backend``
+shape ``_backends.load_backend`` now returns, for tests that inject other
+fakes (raising, wrong-shape, wrong-dtype, limited-quality) into the
+registry.
 
 Reads: pytimestretch._backends, pytimestretch.errors.
 """
@@ -19,7 +28,24 @@ import numpy as np
 import pytest
 
 from pytimestretch import _backends
+from pytimestretch._backends import Backend
 from pytimestretch.errors import BackendUnavailableError
+
+
+class _LastCall:
+    """Module-level recorder for the fake backend's most recent render()
+    call, so contract tests can assert exactly what the facade passed
+    through (pitch_scale, preserve_formants, quality, markers)."""
+
+    buffer: np.ndarray | None = None
+    sample_rate: int | None = None
+    markers: np.ndarray | None = None
+    pitch_scale: float | None = None
+    preserve_formants: bool | None = None
+    quality: str | None = None
+
+
+last_call = _LastCall()
 
 
 def fake_stretch(
@@ -30,25 +56,63 @@ def fake_stretch(
     preserve_formants: bool,
     quality: str,
 ) -> np.ndarray:
-    """Native-contract-v2 fake: per-channel linear interpolation to
-    ``markers[-1][1]`` frames.
+    """Native-contract-v2 fake: per-marker-segment linear interpolation.
+
+    Each consecutive marker pair resamples its own segment of the input
+    independently onto its own span of the output, so the fake's output
+    genuinely reflects marker placement (not just the overall two-endpoint
+    ratio). ``pitch_scale``/``preserve_formants``/``quality`` don't affect
+    this fake's output, but every argument is recorded on ``last_call``
+    before the input buffer is zeroed, so tests can assert what the facade
+    computed and passed through.
 
     Also overwrites its input buffer after reading, so a test relying on
     caller-array immutability catches a facade that fails to copy.
     """
+    last_call.buffer = buffer.copy()
+    last_call.sample_rate = sample_rate
+    last_call.markers = markers.copy()
+    last_call.pitch_scale = pitch_scale
+    last_call.preserve_formants = preserve_formants
+    last_call.quality = quality
+
     channels, frames = buffer.shape
     target_frames = int(markers[-1, 1])
-    src_x = np.arange(frames, dtype=np.float64)
-    dst_x = np.linspace(0, max(frames - 1, 0), num=target_frames, dtype=np.float64)
+    buffer_f64 = buffer.astype(np.float64)
+    xp = np.arange(frames, dtype=np.float64)
 
     out = np.empty((channels, target_frames), dtype=np.float32)
-    for c in range(channels):
-        out[c] = np.interp(dst_x, src_x, buffer[c].astype(np.float64)).astype(
-            np.float32
-        )
+    for i in range(len(markers) - 1):
+        src_start, dst_start = int(markers[i, 0]), int(markers[i, 1])
+        src_end, dst_end = int(markers[i + 1, 0]), int(markers[i + 1, 1])
+        seg_len = dst_end - dst_start
+        # np.interp clamps queries outside [0, frames) to the boundary
+        # sample rather than raising, so src_end == frames (the last
+        # marker's convention) needs no special-casing here.
+        query_x = np.linspace(src_start, src_end, num=seg_len, endpoint=False)
+        for c in range(channels):
+            out[c, dst_start:dst_end] = np.interp(
+                query_x, xp, buffer_f64[c]
+            ).astype(np.float32)
 
     buffer[...] = 0  # prove the facade never hands the engine a live alias
     return out
+
+
+def register_fake_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    render,
+    supported_quality: tuple[str, ...] = ("high", "balanced", "fast"),
+) -> None:
+    """Register ``render`` under ``name`` in ``_backends._REGISTRY``, wrapped
+    as the ``Backend(render, supported_quality)`` shape ``load_backend`` now
+    returns."""
+    monkeypatch.setitem(
+        _backends._REGISTRY,
+        name,
+        lambda: Backend(render=render, supported_quality=supported_quality),
+    )
 
 
 class RaisingFakeStretch:
@@ -112,7 +176,7 @@ def backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> 
     """
     name = request.param
     if name == "fake":
-        monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch)
+        register_fake_backend(monkeypatch, "fake", fake_stretch)
         return "fake"
 
     try:

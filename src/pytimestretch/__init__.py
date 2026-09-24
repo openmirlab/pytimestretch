@@ -1,5 +1,5 @@
-"""Package facade: version, the time_stretch entry point, backend
-introspection, and public errors.
+"""Package facade: version, the time_stretch/pitch_shift/time_warp entry
+points, backend introspection, and public errors.
 
 Reads: .__about__, ._backends, .errors, .stretch.
 """
@@ -12,8 +12,9 @@ from .errors import (
     InvalidAudioError,
     PytimestretchError,
     UnknownBackendError,
+    UnsupportedOptionError,
 )
-from .stretch import time_stretch
+from .stretch import pitch_shift, time_stretch, time_warp
 
 __all__ = [
     "BACKEND_NAMES",
@@ -22,7 +23,10 @@ __all__ = [
     "InvalidAudioError",
     "PytimestretchError",
     "UnknownBackendError",
+    "UnsupportedOptionError",
     "__version__",
     "available_backends",
+    "pitch_shift",
     "time_stretch",
+    "time_warp",
 ]
