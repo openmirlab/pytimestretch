@@ -38,7 +38,7 @@ Engine facts from the vendored headers:
 
 ## Resolved questions
 
-- Scope: marker warp, pitch shift with formant control, and a two-level
+- Scope: marker warp, pitch shift with formant control, and a three-level
   quality preset, on **both** engines (Paul, 2026-09-24).
 - Public vocabulary follows musical intent and pyrubberband habits, not
   engine flags: `semitones`, `formants`, `quality`, `markers`.
@@ -115,8 +115,8 @@ gate fails.
    `outputSeek()` pre-roll, `flush()`, and latency-compensated schedule, and
    `presetCheaper` for `"balanced"`; `"fast"` raises `UnsupportedOptionError`. Same measurements as step 3; pin tolerances.
    Short inputs keep the existing padding rule.
-5. **Listening and docs.** Round-2 blind listening on real loops (material
-   per open question 1): warp to a grid, ±semitone shifts with and without
+5. **Listening and docs.** Round-2 blind listening on real loops (rytho-library,
+   kept local): warp to a grid, ±semitone shifts with and without
    formant preservation on a vocal, and high vs balanced vs fast. Then update README
    (examples for all three functions), CLAUDE.md, CHANGELOG, measurement
    notes, and `plan.md`.
