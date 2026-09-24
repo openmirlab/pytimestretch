@@ -761,6 +761,35 @@ def test_invalid_quality_rejected(call) -> None:
     assert "quality" in str(excinfo.value)
 
 
+# quality="fast" was removed 2026-09-25 (blind listening round 2: no
+# audible benefit, no real speed edge over "balanced", flat pure pitch
+# shifts). It gets its own teaching message pointing at "balanced", raised
+# by validation before a backend is ever resolved -- unlike a merely
+# backend-unsupported quality (UnsupportedOptionError, above), "fast" is no
+# longer pytimestretch vocabulary at all, on any backend.
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda audio: pytimestretch.time_stretch(
+            audio, SAMPLE_RATE, duration_ratio=1.0, quality="fast",
+            backend="rubberband",
+        ),
+        lambda audio: pytimestretch.pitch_shift(
+            audio, SAMPLE_RATE, semitones=1.0, quality="fast", backend="rubberband"
+        ),
+        lambda audio: pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (10, 10)], quality="fast",
+            backend="rubberband",
+        ),
+    ],
+)
+def test_quality_fast_rejected_before_backend_load(call) -> None:
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(InvalidAudioError) as excinfo:
+        call(audio)
+    assert "balanced" in str(excinfo.value)
+
+
 # --- Argument pass-through (pitch_scale, preserve_formants, quality, markers)
 
 
@@ -957,24 +986,12 @@ def test_time_warp_validates_before_backend_availability() -> None:
 #
 # Rubber Band (step 3) and Signalsmith (step 4) both now implement native
 # contract v2 in full: pitch shift, formant control, quality presets, and
-# marker warp all succeed on both. The only remaining engine-capability gap
-# is Signalsmith's SUPPORTED_QUALITY, which has no "fast" entry at all (no
-# equivalent preset in the library) — the facade raises
-# UnsupportedOptionError for that name before ever calling the native
-# module, which is what the section below pins.
-
-
-def test_signalsmith_fast_quality_raises_unsupported_option_error() -> None:
-    try:
-        pytimestretch._backends.load_backend("signalsmith")
-    except pytimestretch.BackendUnavailableError:
-        pytest.skip("signalsmith is unavailable in this environment")
-    audio = sine_440(1000).astype(np.float32)
-    with pytest.raises(UnsupportedOptionError):
-        pytimestretch.time_stretch(
-            audio, SAMPLE_RATE, duration_ratio=1.0, quality="fast",
-            backend="signalsmith",
-        )
+# marker warp all succeed on both. Both engines' SUPPORTED_QUALITY is
+# exactly ("high", "balanced") -- "fast" was removed 2026-09-25 (blind
+# listening round 2: no audible benefit, no real speed edge over
+# "balanced") and is rejected during validation for every backend, before
+# UnsupportedOptionError's own backend-capability check is ever reached
+# (see test_quality_fast_rejected_before_backend_load above).
 
 
 @pytest.mark.parametrize(
@@ -1002,14 +1019,6 @@ def test_signalsmith_fast_quality_raises_unsupported_option_error() -> None:
             ),
             target_frames(1000, 1.5),
             id="time_stretch_quality_balanced",
-        ),
-        pytest.param(
-            lambda audio: pytimestretch.time_stretch(
-                audio, SAMPLE_RATE, duration_ratio=1.5, quality="fast",
-                backend="rubberband",
-            ),
-            target_frames(1000, 1.5),
-            id="time_stretch_quality_fast",
         ),
         pytest.param(
             lambda audio: pytimestretch.time_warp(
@@ -1080,9 +1089,9 @@ def test_rubberband_full_contract_v2_options_succeed(call, expected_frames: int)
 def test_signalsmith_full_contract_v2_options_succeed(call, expected_frames: int) -> None:
     # Step 4 (native contract v2 for Signalsmith): every combination that
     # used to raise the "not implemented yet" EngineError now succeeds with
-    # the exact length/shape/dtype native contract v2 promises. Unlike
-    # Rubber Band, there is no "fast" quality to also exercise here — see
-    # test_signalsmith_fast_quality_raises_unsupported_option_error above.
+    # the exact length/shape/dtype native contract v2 promises. Rubber Band
+    # and Signalsmith now share the same SUPPORTED_QUALITY, so there is no
+    # engine-specific quality case to exercise here beyond "balanced".
     try:
         pytimestretch._backends.load_backend("signalsmith")
     except pytimestretch.BackendUnavailableError:

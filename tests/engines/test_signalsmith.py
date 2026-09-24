@@ -9,8 +9,7 @@ so a small future build/config change doesn't flap the suite. Calls target
 native contract v2's ``render(buffer, sample_rate, markers, pitch_scale,
 preserve_formants, quality)`` in full (step 4 implements pitch, formants,
 quality presets via `presetDefault`/`presetCheaper`, and marker warp via a
-scheduled process()/flush() stream; only "fast" has no equivalent preset
-and stays unsupported).
+scheduled process()/flush() stream).
 
 Below the original step-1/2/4-plain checks (impulse placement via
 ``.exact()``, silence, crosstalk, determinism, engine_info/
@@ -250,7 +249,10 @@ def test_supported_quality_names_engine_capability() -> None:
     # The capability the engine can honor: render() accepts every quality
     # SUPPORTED_QUALITY names (see
     # test_pitch_shift_accuracy_within_measured_tolerance et al. below). No
-    # "fast" equivalent for Signalsmith per the plan -- see
+    # "fast" equivalent for Signalsmith (never had one). "fast" itself was
+    # removed from pytimestretch entirely 2026-09-25 (blind listening round
+    # 2), so it is rejected for every backend at validation, before
+    # SUPPORTED_QUALITY is even consulted -- see
     # test_unknown_quality_string_raises_value_error.
     assert ss.SUPPORTED_QUALITY == ("high", "balanced")
 
@@ -259,7 +261,8 @@ def test_unknown_quality_string_raises_value_error() -> None:
     # A genuine bad call: configure_engine() in
     # native/signalsmith_module.cpp raises std::invalid_argument for
     # anything outside "high"/"balanced" (defense in depth -- the facade
-    # already rejects "fast" via SUPPORTED_QUALITY before this is reached).
+    # already rejects an unknown quality via SUPPORTED_QUALITY, and rejects
+    # "fast" outright at validation, before this is reached).
     audio = np.zeros(44100, dtype=np.float32)
     buf = audio.reshape(1, -1).copy()
     markers = two_markers(44100, 44100)
@@ -569,8 +572,8 @@ def test_marker_placement_alternating_ratio_loses_clicks_as_measured(
 #   mono:   high 295.2 ms, balanced 174.6 ms
 #   stereo: high 479.1 ms, balanced 279.6 ms
 # "balanced" is consistently faster (~1.7x) but by a smaller margin than
-# Rubber Band's "balanced"/"fast" vs "high" gap (~3x) -- reported, not
-# hidden. Medians of 3 here (not 7) to keep the test fast.
+# Rubber Band's "balanced" vs "high" gap (~3x) -- reported, not hidden.
+# Medians of 3 here (not 7) to keep the test fast.
 
 
 def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:

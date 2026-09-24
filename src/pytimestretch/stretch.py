@@ -153,7 +153,7 @@ def time_stretch(
         both engines' natural behavior); ``"preserve"`` keeps it in place,
         useful for voices so a pitched-up singer doesn't sound like a
         chipmunk.
-    quality : {"high", "balanced", "fast"}, default "high"
+    quality : {"high", "balanced"}, default "high"
         Speed/quality preset. Not every backend supports every value; an
         unsupported combination raises ``UnsupportedOptionError`` rather
         than silently aliasing to a different quality.
@@ -256,7 +256,7 @@ def pitch_shift(
         nothing" call.
     formants : {"shift", "preserve"}, default "shift"
         See ``time_stretch``.
-    quality : {"high", "balanced", "fast"}, default "high"
+    quality : {"high", "balanced"}, default "high"
         See ``time_stretch``.
     backend : str, default "rubberband"
         See ``time_stretch``.
@@ -348,7 +348,7 @@ def time_warp(
         See ``time_stretch``.
     formants : {"shift", "preserve"}, default "shift"
         See ``time_stretch``.
-    quality : {"high", "balanced", "fast"}, default "high"
+    quality : {"high", "balanced"}, default "high"
         See ``time_stretch``.
     backend : str, default "rubberband"
         See ``time_stretch``.

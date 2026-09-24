@@ -103,7 +103,7 @@ def register_fake_backend(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
     render,
-    supported_quality: tuple[str, ...] = ("high", "balanced", "fast"),
+    supported_quality: tuple[str, ...] = ("high", "balanced"),
 ) -> None:
     """Register ``render`` under ``name`` in ``_backends._REGISTRY``, wrapped
     as the ``Backend(render, supported_quality)`` shape ``load_backend`` now

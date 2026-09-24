@@ -175,13 +175,15 @@ def test_engine_info_unchanged_keys() -> None:
 
 def test_supported_quality_names_engine_capability() -> None:
     # Step 3: render() now honors every quality SUPPORTED_QUALITY names.
-    assert rb.SUPPORTED_QUALITY == ("high", "balanced", "fast")
+    # "fast" was removed 2026-09-25 (blind listening round 2: no audible
+    # benefit, no real speed edge over "balanced").
+    assert rb.SUPPORTED_QUALITY == ("high", "balanced")
 
 
 def test_unknown_quality_string_raises_value_error() -> None:
     # Now a genuine bad call (not "unimplemented"): quality_options() in
     # native/rubberband_module.cpp raises std::invalid_argument for
-    # anything outside "high"/"balanced"/"fast".
+    # anything outside "high"/"balanced".
     audio = np.zeros(44100, dtype=np.float32)
     buf = audio.reshape(1, -1).copy()
     markers = two_markers(44100, 44100)
@@ -193,15 +195,15 @@ def test_unknown_quality_string_raises_value_error() -> None:
 #
 # Measured worst-case |cents| error, 440 Hz sine, 3 s, semitones +7 and -5
 # at duration_ratio 1.0 (this file's disposable measurement script):
-# high 0.25, balanced 0.25, fast 5.46 (+7) / 31.03 (-5). "fast" (R2) is a
-# real, reproducible outlier here -- flagged for Paul, not a test bug (see
-# the step 3 report). Tolerances below round the measured worst case up
-# with headroom; "high"/"balanced" get a tight bound since their headroom
-# is enormous relative to what was measured.
-PITCH_CENTS_TOLERANCE = {"high": 3.0, "balanced": 3.0, "fast": 45.0}
+# high 0.25, balanced 0.25. Tolerances below round the measured worst case
+# up with headroom. ("fast"/R2 was measured at 5.46 (+7) / 31.03 (-5) cents
+# -- a real, reproducible outlier -- and was one input to removing "fast"
+# 2026-09-25 after blind listening round 2 confirmed no audible benefit and
+# no real speed edge over "balanced"; it is no longer a supported quality.)
+PITCH_CENTS_TOLERANCE = {"high": 3.0, "balanced": 3.0}
 
 
-@pytest.mark.parametrize("quality", ["high", "balanced", "fast"])
+@pytest.mark.parametrize("quality", ["high", "balanced"])
 @pytest.mark.parametrize("semitones", [7.0, -5.0])
 def test_pitch_shift_accuracy_within_measured_tolerance(
     semitones: float, quality: str
@@ -301,7 +303,7 @@ def _find_peak_near(freqs, mag, center: float, window: float = 400.0):
     return float(freqs[mask][idx])
 
 
-@pytest.mark.parametrize("quality", ["high", "fast"])
+@pytest.mark.parametrize("quality", ["high", "balanced"])
 @pytest.mark.parametrize("mode", ["shift", "preserve"])
 def test_formant_2600hz_stays_within_measured_tolerance(mode: str, quality: str) -> None:
     semitones = 5.0
@@ -342,22 +344,21 @@ def test_formant_2600hz_stays_within_measured_tolerance(mode: str, quality: str)
 # (x0.5 / x2.0 between neighbours). Measured (100/250 ms spacing, this
 # file's script):
 #   steady, high:   max |offset| 3.85 ms (100 ms), 3.74 ms (250 ms), no loss
-#   steady, fast:   max |offset| 13.22 ms (100 ms), 12.22 ms (250 ms), no loss
 #   alt,    high:   17/30 and 8/12 interior clicks LOST (no detectable peak
 #                   within a 20 ms search window); of those found, max
 #                   |offset| ~18-18.5 ms
-#   alt,    fast:   no clicks lost, max |offset| ~17.2 ms (100 ms), 16.2 ms
-#                   (250 ms)
 # The steady case pins tightly. The alternating case is a genuine anomaly
 # for Paul, not a measurement artifact -- direct inspection (offset per
 # marker, printed during step 3) showed real drift up to ~100 ms and near-
 # zero peak energy at some markers, not just search-window misses. It is
 # pinned loosely (headroom over the measured missing-count and offset) so
-# a further regression is still caught, without hiding that "high" loses
-# more clicks than "fast" under abrupt local-ratio alternation here.
-STEADY_TOLERANCE_MS = {"high": 6.0, "fast": 16.0}
-ALT_MAX_OFFSET_TOLERANCE_MS = {"high": 22.0, "fast": 20.0}
-ALT_MAX_MISSING = {"high": 20, "fast": 0}
+# a further regression is still caught. ("fast"/R2 was also measured here
+# (steady: 13.22/12.22 ms, no loss; alt: no clicks lost, ~17.2/16.2 ms) but
+# was removed 2026-09-25 after blind listening round 2 found no audible
+# benefit and no real speed edge over "balanced".)
+STEADY_TOLERANCE_MS = {"high": 6.0}
+ALT_MAX_OFFSET_TOLERANCE_MS = {"high": 22.0}
+ALT_MAX_MISSING = {"high": 20}
 
 
 def _build_markers(spacing_ms: float, sr: int, ratios, n_segments: int) -> np.ndarray:
@@ -390,7 +391,7 @@ def _click_offsets(markers: np.ndarray, out: np.ndarray, sr: int):
 
 
 @pytest.mark.parametrize("spacing_ms", [100, 250])
-@pytest.mark.parametrize("quality", ["high", "fast"])
+@pytest.mark.parametrize("quality", ["high"])
 def test_marker_placement_steady_ratio_within_tolerance(
     quality: str, spacing_ms: int
 ) -> None:
@@ -411,7 +412,7 @@ def test_marker_placement_steady_ratio_within_tolerance(
 
 
 @pytest.mark.parametrize("spacing_ms", [100, 250])
-@pytest.mark.parametrize("quality", ["high", "fast"])
+@pytest.mark.parametrize("quality", ["high"])
 def test_marker_placement_alternating_ratio_within_measured_bound(
     quality: str, spacing_ms: int
 ) -> None:
@@ -435,12 +436,14 @@ def test_marker_placement_alternating_ratio_within_measured_bound(
 # --- Speed order (step 3 measurement) ------------------------------------
 #
 # Measured (warmed medians of 7, this host, 4 s noise+clicks at x1.5):
-#   mono:   high 232 ms, balanced 71.4 ms, fast 73.5 ms
-#   stereo: high 470 ms, balanced 145.0 ms, fast 130.6 ms
+#   mono:   high 232 ms, balanced 71.4 ms
+#   stereo: high 470 ms, balanced 145.0 ms
 # "high" is unambiguously slowest in both cases (the only ordering claim
-# this plan step actually needs pinned -- see the step 3 report on
-# "balanced" vs "fast" below). Medians of 3 here (not 7) to keep the test
-# fast; the gap to "high" is large enough (>=3x) that 3 samples is plenty.
+# this plan step actually needs pinned). Medians of 3 here (not 7) to keep
+# the test fast; the gap to "high" is large enough (>=3x) that 3 samples is
+# plenty. ("fast" was also measured here (mono 73.5 ms, stereo 130.6 ms --
+# no real speed edge over "balanced") but was removed 2026-09-25 after
+# blind listening round 2 confirmed no audible benefit either.)
 
 
 def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:
@@ -463,13 +466,11 @@ def _median_render_ms(channels: int, quality: str, ratio: float = 1.5) -> float:
     return float(np.median(times))
 
 
-def test_high_quality_is_slower_than_balanced_and_fast_on_stereo() -> None:
+def test_high_quality_is_slower_than_balanced_on_stereo() -> None:
     high_ms = _median_render_ms(2, "high")
     balanced_ms = _median_render_ms(2, "balanced")
-    fast_ms = _median_render_ms(2, "fast")
 
     assert high_ms >= balanced_ms * 1.5
-    assert high_ms >= fast_ms * 1.5
 
 
 # --- engine_version via diagnostics --------------------------------------
@@ -477,7 +478,7 @@ def test_high_quality_is_slower_than_balanced_and_fast_on_stereo() -> None:
 
 @pytest.mark.parametrize(
     ("quality", "expected_version"),
-    [("fast", 2), ("balanced", 3), ("high", 3)],
+    [("balanced", 3), ("high", 3)],
 )
 def test_engine_version_matches_quality(quality: str, expected_version: int) -> None:
     audio = np.zeros(44100, dtype=np.float32)

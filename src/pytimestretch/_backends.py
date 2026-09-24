@@ -15,18 +15,18 @@ frame count) rather than taking them as separate arguments. ``pitch_scale``
 is a linear frequency ratio (``1.0`` = unchanged), ``preserve_formants``
 keeps the spectral envelope when pitch-shifting, and ``quality`` selects an
 engine-specific speed/quality preset. Each native module's
-``SUPPORTED_QUALITY`` tuple names which of ``"high"``/``"balanced"``/
-``"fast"`` it can honor at all — the facade (``stretch._render``) checks a
-requested ``quality`` against it and raises ``UnsupportedOptionError``
-before calling ``render()`` rather than silently aliasing. Both engines now
-implement native contract v2 in full (Rubber Band since step 3, Signalsmith
-since step 4): markers with ``K > 2`` (warp), ``pitch_scale != 1.0``,
+``SUPPORTED_QUALITY`` tuple names which of ``"high"``/``"balanced"`` it can
+honor at all — the facade (``stretch._render``) checks a requested
+``quality`` against it and raises ``UnsupportedOptionError`` before calling
+``render()`` rather than silently aliasing. Both engines now implement
+native contract v2 in full (Rubber Band since step 3, Signalsmith since
+step 4): markers with ``K > 2`` (warp), ``pitch_scale != 1.0``,
 ``preserve_formants``, and every quality each engine's own
-``SUPPORTED_QUALITY`` lists all succeed. Rubber Band lists
-``("high", "balanced", "fast")``; Signalsmith lists only
-``("high", "balanced")`` — it has no "fast"-equivalent preset in the
-library, so that name is rejected here, by the facade, before ``render()``
-is ever called. A failed import is reported as ``BackendUnavailableError``
+``SUPPORTED_QUALITY`` lists all succeed. Both Rubber Band and Signalsmith
+list ``("high", "balanced")`` — ``"fast"`` was removed (2026-09-25, after
+blind listening round 2 found no audible benefit and no real speed edge
+over "balanced") and is now rejected during validation, before a backend
+is ever resolved. A failed import is reported as ``BackendUnavailableError``
 rather than leaking the raw ``ImportError``, so callers get a message
 naming the backend and how to fix it.
 

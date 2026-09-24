@@ -13,8 +13,11 @@
  * with `splitComputation=false` (that flag trades latency for spreading a
  * block's work across more process() calls, irrelevant to this binding's
  * whole-buffer-at-once calls). Any other string is `std::invalid_argument`
- * (defense in depth: the facade already rejects "fast" via
- * `SUPPORTED_QUALITY`). `pitch_scale` is `setTransposeFactor(pitch_scale)`
+ * (defense in depth: the facade already rejects an unknown quality via
+ * `_check_quality`/`SUPPORTED_QUALITY` before `render()` is ever called;
+ * `"fast"` in particular gets a dedicated `InvalidAudioError` at validation
+ * since 2026-09-25 — see docs/blueprints/thoughts/2026-09-25-blind-listening-round-2.md).
+ * `pitch_scale` is `setTransposeFactor(pitch_scale)`
  * (no tonality limit — out of the plan's scope). `preserve_formants` calls
  * `setFormantFactor(1, compensatePitch=true)` plus `setFormantBase(0)`
  * (auto-detect fundamental) per the header's own "Formant compensation"
@@ -164,7 +167,8 @@ struct RenderInputs {
  * that knows how contract v2's (pitch_scale, preserve_formants, quality)
  * map onto SignalsmithStretch calls. Throws std::invalid_argument for an
  * unknown `quality` (defense in depth; the facade already gates on
- * SUPPORTED_QUALITY before calling render() at all). */
+ * SUPPORTED_QUALITY, and rejects "fast" outright at validation, before
+ * calling render() at all). */
 void configure_engine(SignalsmithStretch<float> &stretch, size_t channels,
                        size_t sample_rate, double pitch_scale,
                        bool preserve_formants, const std::string &quality) {

@@ -13,9 +13,10 @@
  * `quality` selects the engine build (`OptionProcessOffline |
  * OptionThreadingNever | OptionChannelsApart` always applied): "high" ->
  * `OptionEngineFiner` (R3, standard window); "balanced" ->
- * `OptionEngineFiner | OptionWindowShort` (R3, short window, faster);
- * "fast" -> `OptionEngineFaster` (R2, its default transient/detector/phase
- * settings). Any other string is `std::invalid_argument`. `pitch_scale` is
+ * `OptionEngineFiner | OptionWindowShort` (R3, short window, faster). Any
+ * other string is `std::invalid_argument` (`"fast"` -> R2/OptionEngineFaster
+ * was removed 2026-09-25 after blind listening round 2 found no audible
+ * benefit and no real speed edge over "balanced"). `pitch_scale` is
  * fixed for the life of the (offline) stretcher, passed to its constructor
  * before `study()`. `preserve_formants` selects `OptionFormantPreserved`
  * (else `OptionFormantShifted`), also a construction-time option.
@@ -42,9 +43,9 @@
  * and exactly one place that knows contract v2 validation.
  * `_stretch_diagnostics()` also reports `engine_version` — the value
  * `RubberBandStretcher::getEngineVersion()` reports for the engine actually
- * constructed (2 for "fast", 3 for "high"/"balanced") — rather than
- * assuming the mapping, since that's exactly the fact measurements need to
- * confirm. `engine_info()` is unchanged from step 2.
+ * constructed (always 3 now that "high"/"balanced" are the only qualities)
+ * — rather than assuming the mapping, since that's exactly the fact
+ * measurements need to confirm. `engine_info()` is unchanged from step 2.
  *
  * Reads: rubberband/RubberBandStretcher.h (vendored, extern/rubberband).
  */
@@ -103,11 +104,12 @@ constexpr RubberBandStretcher::Options kBaseEngineOptions =
 
 /** quality -> the engine/window options it selects, per the plan's step 3
  * decision: "high" = R3 standard window (current default); "balanced" = R3
- * + OptionWindowShort (faster, some quality cost per the header); "fast" =
- * R2 (OptionEngineFaster) with its own default transient/detector/phase
- * settings. Any other string is a genuine bad call, not an unimplemented
- * feature -- std::invalid_argument, same family as an unknown formants/
- * markers value would be if this binding validated those itself. */
+ * + OptionWindowShort (faster, some quality cost per the header). "fast"
+ * (R2/OptionEngineFaster) was removed 2026-09-25: blind listening round 2
+ * found no audible benefit and no real speed edge over "balanced". Any
+ * other string is a genuine bad call, not an unimplemented feature --
+ * std::invalid_argument, same family as an unknown formants/markers value
+ * would be if this binding validated those itself. */
 RubberBandStretcher::Options quality_options(const std::string &quality) {
     if (quality == "high") {
         return RubberBandStretcher::OptionEngineFiner;
@@ -116,12 +118,9 @@ RubberBandStretcher::Options quality_options(const std::string &quality) {
         return RubberBandStretcher::OptionEngineFiner |
                RubberBandStretcher::OptionWindowShort;
     }
-    if (quality == "fast") {
-        return RubberBandStretcher::OptionEngineFaster;
-    }
     throw std::invalid_argument(
         "rubberband: quality \"" + quality +
-        "\" is not one of \"high\", \"balanced\", \"fast\"");
+        "\" is not one of \"high\", \"balanced\"");
 }
 
 using InputBuffer =
@@ -446,9 +445,8 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
 
 /** Measurement-only variant sharing run_offline() and validate_render():
  * reports raw_frames (before trim/pad), start_delay, preferred_start_pad,
- * the block size used, and the engine_version actually constructed (2 for
- * "fast"/R2, 3 for "high"/"balanced"/R3), instead of the trimmed/padded
- * audio itself. */
+ * the block size used, and the engine_version actually constructed (always
+ * 3 for "high"/"balanced"/R3), instead of the trimmed/padded audio itself. */
 nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
                               MarkersBuffer markers, double pitch_scale,
                               bool preserve_formants, std::string quality) {
@@ -510,7 +508,7 @@ NB_MODULE(_rubberband, m) {
     // Quality names Rubber Band can honor; the single place that knows this
     // engine's capability. The facade (step 2) uses it to raise
     // UnsupportedOptionError before calling render() at all.
-    m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced", "fast");
+    m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced");
     m.def("engine_info", &engine_info, "Report the compiled Rubber Band build configuration.");
     m.def("render", &render, nb::arg("buffer"), nb::arg("sample_rate"),
           nb::arg("markers"), nb::arg("pitch_scale"),

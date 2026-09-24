@@ -58,7 +58,12 @@ PITCH_SHIFT_KEYWORDS = ("semitones", "formants", "quality", "backend")
 TIME_WARP_KEYWORDS = ("markers", "semitones", "formants", "quality", "backend")
 
 FORMANTS_CHOICES = ("shift", "preserve")
-QUALITY_CHOICES = ("high", "balanced", "fast")
+QUALITY_CHOICES = ("high", "balanced")
+
+_QUALITY_FAST_REMOVED_MESSAGE = (
+    '"fast" was removed; use "balanced" (~3x faster than "high" on Rubber '
+    'Band, ~1.7x on Signalsmith)'
+)
 
 
 def _check_audio(audio: object) -> tuple[int, int | None]:
@@ -177,7 +182,7 @@ def _reject_unexpected_kwargs(
         raise TypeError(
             f"{func_name}() got an unexpected keyword argument 'rbargs': "
             "pytimestretch has no raw Rubber Band flags; use quality= "
-            '("high"/"balanced"/"fast"), formants= ("shift"/"preserve"), '
+            '("high"/"balanced"), formants= ("shift"/"preserve"), '
             "and semitones= instead"
         )
 
@@ -259,6 +264,8 @@ def _check_formants(formants: object) -> bool:
 
 def _check_quality(quality: object) -> str:
     """Validate ``quality`` and return it unchanged."""
+    if quality == "fast":
+        raise InvalidAudioError(_QUALITY_FAST_REMOVED_MESSAGE)
     if quality not in QUALITY_CHOICES:
         raise InvalidAudioError(
             f"quality must be one of {QUALITY_CHOICES!r}, got {quality!r}"
