@@ -5,5 +5,24 @@
 - Established a private, installable package scaffold and an explicit
   unimplemented audio entry point.
 - Recorded the first backend-development contract and verification gates.
-- Left the direct-binding versus Python/NumPy/SciPy/Numba implementation
-  choice open for a measured comparison.
+- Recorded a first Python/Numba feasibility probe (numerical and speed checks
+  only; blind listening pending).
+- Decided binding-first: direct C++ bindings to Rubber Band, then Signalsmith
+  Stretch; the Python/Numba stretcher continues as a non-blocking research
+  lane.
+- Added `time_stretch` with an engine-independent contract suite and
+  agent-oriented errors (`rate=`-style keywords, channels-first arrays).
+- Built Rubber Band v4.0.0 from vendored sources into the package; offline R3
+  stretching now works with exact output length, preserved dtype, and
+  measured placement, pitch, crosstalk, and determinism.
+- Added the Signalsmith Stretch backend (1.3.2 + main@57b93f4) through
+  `.exact()`; the same contract suite passes on both engines.
+- Added `pitch_shift`, `time_warp` (integer source→output markers), and
+  `semitones`/`formants`/`quality` options on both engines, with teaching
+  errors for pyrubberband's `n_steps=`, `time_map=`, and `rbargs=`.
+- Fixed Signalsmith warp drift for markers whose output spans are not
+  whole frames; constant-ratio warps now match `time_stretch`.
+- Licensed the package under GPL-2.0-or-later with a NOTICE of vendored
+  components; the repository remains private and unpublished.
+- Added a Linux wheel CI workflow (manylinux x86_64, CPython 3.10–3.13) that
+  tests every built wheel and never publishes.

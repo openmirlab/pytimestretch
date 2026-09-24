@@ -5,5 +5,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 build/
+_skbuild/
 dist/
 .env
+wheelhouse/

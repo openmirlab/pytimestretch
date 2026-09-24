@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling>=1.26"]
-build-backend = "hatchling.build"
+requires = ["scikit-build-core>=0.10", "nanobind>=2.4"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "pytimestretch"
@@ -8,20 +8,42 @@ dynamic = ["version"]
 description = "An experimental Python home for time stretching"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "LicenseRef-Private"
+license = "GPL-2.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
 classifiers = ["Private :: Do Not Upload"]
 maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
-dependencies = []
+dependencies = ["numpy>=1.24"]
 
 [project.urls]
 Repository = "https://github.com/openmirlab/pytimestretch"
 
-[tool.hatch.version]
-path = "src/pytimestretch/__about__.py"
+[tool.scikit-build]
+wheel.packages = ["src/pytimestretch"]
+minimum-version = "0.10"
+build-dir = "build/{wheel_tag}"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pytimestretch"]
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "src/pytimestretch/__about__.py"
+
+[tool.scikit-build.sdist]
+# extern/** carries the vendored engine sources the native build compiles;
+# the sdist->wheel path (what `uv build` exercises) needs them present.
+# Drop upstream subtrees this build never touches (docs, packaging glue for
+# other host plugins, the nested cmd/util submodule) to keep the sdist lean.
+include = ["extern/**"]
+exclude = [
+    "extern/rubberband/otherbuilds",
+    "extern/rubberband/vamp",
+    "extern/rubberband/ladspa-lv2",
+    "extern/rubberband/dotnet",
+    "extern/rubberband/cross",
+    "extern/rubberband/com",
+    "extern/signalsmith-stretch/cmd",
+    "extern/signalsmith-stretch/web",
+    "extern/signalsmith-linear/tests",
+    "**/.git",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.9", "build>=1.2"]
@@ -31,3 +53,15 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py310"
+
+[tool.cibuildwheel]
+# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md: Linux
+# only until CI adds macOS and Windows before public release (plan review,
+# 2026-09-24). CPython 3.10-3.13 per requires-python; manylinux x86_64 only
+# for now (skip musllinux, PyPy, and i686 -- no known need yet, and each
+# adds its own build/test cost on a private repo).
+build = "cp3{10,11,12,13}-manylinux_x86_64"
+skip = ["*-musllinux*", "pp*", "*-manylinux_i686"]
+build-verbosity = 1
+test-requires = ["pytest"]
+test-command = "pytest {project}/tests -q"

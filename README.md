@@ -1,26 +1,67 @@
 # pytimestretch
 
-**A Python home for time stretching, with the algorithm boundary still under test.**
+**NumPy-facing Python bindings to native time-stretch engines.**
 
-`pytimestretch` is a private OpenMIRLab package under development. The name
-deliberately says what the package is for. The current product hypothesis is
-a NumPy-facing Python binding to native time-stretch libraries, initially
-Rubber Band and Signalsmith Stretch—not a wrapper around existing Python
-wrappers. A competing hypothesis is that a focused Python/NumPy/SciPy/Numba
-implementation could meet our actual needs without those engines. That fork
-is not settled; the [development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md)
-defines the deciding experiment. Rubber Band remains Tactus's working
-baseline, not a proven universal winner.
+`pytimestretch` is a private OpenMIRLab package under development. The
+product direction is decided: a NumPy-facing Python extension that calls the
+Rubber Band and Signalsmith Stretch C++ libraries directly, in memory. It is
+not a wrapper around `pyrubberband` or `python-stretch` (those serve as
+behavior references and comparison baselines), and it does not re-implement
+either engine's algorithm. A small Python/NumPy/SciPy/Numba prototype passed
+basic correctness and speed checks in a [first probe](docs/blueprints/thoughts/2026-09-24-python-numba-vs-native-stretch-probe.md),
+but its sound quality has not been judged; it continues as a research lane
+for special creative control, not a replacement for either engine. See the
+[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md).
+Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
-This repository is an **installable scaffold, not an audio processor yet**.
-`pytimestretch.__version__` imports. `stretch_audio(...)` deliberately raises
-`NotImplementedError`. No native binding is built or bundled by this scaffold.
-There is no PyPI release.
+**Both engines work.** Three functions call Rubber Band v4.0.0 (the default)
+or Signalsmith Stretch 1.3.2 (`backend="signalsmith"`), both compiled from
+vendored sources into the package — no system library needed:
+
+```python
+import numpy as np
+import soundfile as sf
+import pytimestretch as pts
+
+audio, sr = sf.read("loop.wav", dtype="float32")        # (frames, channels)
+
+# Change duration, keep pitch. duration_ratio = output length / input length.
+slower = pts.time_stretch(audio, sr, duration_ratio=1.5)
+assert len(slower) == round(len(audio) * 1.5)
+
+# Change pitch, keep duration. For voices, preserve formants.
+vocal_up = pts.pitch_shift(audio, sr, semitones=3, formants="preserve")
+
+# Warp: move source frames to output frames (e.g. a hit at 0.52 s onto beat 2
+# at 120 BPM). Integer (source, output) pairs from (0, 0) to (len, output_len);
+# with backend="signalsmith", keep markers >= 100 ms apart for tight timing.
+hit, beat2 = int(round(0.52 * sr)), int(round(0.5 * sr))
+warped = pts.time_warp(audio, sr, markers=[(0, 0), (hit, beat2), (len(audio), len(audio))])
+```
+
+- `duration_ratio` runs the opposite way to pyrubberband/librosa `rate`
+  (`rate=2.0` there is `duration_ratio=0.5` here); passing `rate=`,
+  `n_steps=`, `time_map=`, or `rbargs=` raises an error that shows the
+  equivalent. `time_stretch` and `time_warp` also take `semitones=`.
+- `formants="shift"` (default) lets the spectral envelope move with the
+  pitch; use `"preserve"` for voices — it was clearly preferred on a vocal
+  in blind listening.
+- `quality="high"` (default) or `"balanced"`: about 3× faster on Rubber
+  Band and 1.7× on Signalsmith; no audible difference was heard on a
+  full-mix tempo change.
+- Output length is exact, dtype matches the input (engines compute in
+  float32), and the input is never modified.
+
+In two rounds of blind listening (one listener, short loops) Rubber Band was
+preferred wherever a difference was heard; Signalsmith was close on a bass
+pitch shift. Measurements and listening notes are in
+`docs/blueprints/thoughts/`. Building from source needs CMake ≥ 3.24 and a
+C++17 compiler. There is no PyPI release.
 
 ```bash
-git clone https://github.com/openmirlab/pytimestretch.git
+git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
 uv sync --group dev
 uv run pytest -q
@@ -33,29 +74,32 @@ The repository is private; clone access requires OpenMIRLab permission.
 
 - The caller owns musical intent: source, target duration or timing, engine
   choice, and any creative parameter choices.
-- `pytimestretch` will own the NumPy-facing contract, input validation,
-  exact output length/alignment policy, and clear errors.
-- A direct C++ binding is a candidate architecture. A measured
-  Python/NumPy/SciPy/Numba engine is also a candidate; neither is shipped.
+- `pytimestretch` owns the NumPy-facing contract, input validation,
+  exact output length and marker placement, and clear errors.
+- Audio is processed by direct C++ bindings to Rubber Band and Signalsmith
+  Stretch behind one shared contract. A Python engine may later ship only as
+  a specialist option backed by its own listening evidence.
 - The package will not take over Tactus arrangement semantics, a DAW session,
   or a real-time playback engine.
 
-The proposed API and exact acceptance checks are in the
-[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md).
-The [bootstrap plan](docs/blueprints/plans/2026-09-24-package-bootstrap.md)
-records what this first setup does and does not implement.
+Design and evidence live in `docs/blueprints/`: the
+[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md),
+the [binding plan](docs/blueprints/plans/2026-09-24-binding-first-engines.md),
+and the [warp/pitch/quality plan](docs/blueprints/plans/2026-09-24-warp-pitch-quality.md).
 
 ## Licensing and distribution
 
-This repository stays private and unpublished while its own public license
-and backend distribution topology are undecided. The present `LICENSE` grants
-no redistribution rights. The package currently vendors no engine code or
-binaries. A future compiled binding may need a different distribution model
-for each engine; a close port of upstream code also needs licensing review.
-Rubber Band itself has GPL-2.0-or-later/commercial licensing;
-`pyrubberband` is ISC; Signalsmith Stretch and its candidate Python binding
-are MIT. Those are separate layers; see [NOTICE](NOTICE). Do not infer that
-an ISC Python wrapper makes a bundled Rubber Band engine ISC.
+pytimestretch is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)
+and [NOTICE](NOTICE)). Its wheels compile in Rubber Band (GPL-2.0-or-later
+or commercial), which makes the package as a whole GPL — the same choice
+Spotify's pedalboard made for the same reason. Signalsmith Stretch and
+Signalsmith Linear are MIT; nanobind's statically linked runtime is
+BSD-3-Clause. Open-source consumers such as Tactus can use it under the GPL;
+a closed-source product that distributes Rubber Band needs a commercial
+licence from Breakfast Quay.
+
+The repository stays private and unpublished until the OpenMIRLab
+constitution gains an audio-tool category that permits a compiled core.
 
 ## Verification
 

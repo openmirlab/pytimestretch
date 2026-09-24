@@ -1,0 +1,9 @@
+[submodule "extern/rubberband"]
+	path = extern/rubberband
+	url = https://github.com/breakfastquay/rubberband.git
+[submodule "extern/signalsmith-stretch"]
+	path = extern/signalsmith-stretch
+	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+[submodule "extern/signalsmith-linear"]
+	path = extern/signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git
