@@ -44,10 +44,16 @@
   [round-2 listening](thoughts/2026-09-25-blind-listening-round-2.md). See the
   [plan](plans/2026-09-24-warp-pitch-quality.md).
 
-## ▶ Next — push, first CI run, Tactus trial
+## ✅ Shipped (draft PR #3) — first GitHub Actions run
 
-- Push `feat/binding-first-engines` when Paul approves and confirm the first
-  GitHub Actions run; then try the API from a real Tactus workflow.
+- `feat/binding-first-engines` pushed; draft PR #3 triggered the wheel
+  workflow: ruff and 319 tests green, manylinux_2_28 x86_64 wheels for
+  CPython 3.10–3.13 each passing 319 tests in-container (run 35975469626).
+
+## ▶ Next — review PR #3, then a Tactus trial
+
+- Paul reviews and decides whether to merge PR #3; then try the API from a
+  real Tactus workflow.
 
 ## ⇄ Parallel — Python research lane (non-blocking)
 
