@@ -33,7 +33,7 @@ find_package(nanobind CONFIG REQUIRED)
 
 # Pinned upstream revision, recorded into engine_info() so a build can be
 # traced back to the exact submodule commit it was compiled against. Falls
-# back to the plan's pinned tag when .git is unavailable (an sdist build
+# back to the pinned upstream tag when .git is unavailable (an sdist build
 # ships the sources but not rubberband's own .git metadata).
 set(PYTIMESTRETCH_RB_REVISION "v4.0.0")
 find_package(Git QUIET)

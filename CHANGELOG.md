@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Use uv throughout installation and execution examples, and distinguish
+  C++ source-build requirements from precompiled wheel installation.
+- Credit pedalboard and pylibrb alongside the original engines and other
+  binding references in README and NOTICE.
+- Keep local blueprints out of Git tracking and source distributions; remove
+  public documentation's dependency on those notes.
+
 ## [0.1.0] - 2026-09-24
 
 First versioned source snapshot. Available from GitHub; not published to PyPI.

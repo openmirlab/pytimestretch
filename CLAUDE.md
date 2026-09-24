@@ -1,9 +1,8 @@
 # pytimestretch — maintainer context
 
-Read [README.md](README.md) for the current user-facing contract and
-[the development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md)
-before implementing a backend. OpenMIRLab's current constitution lives in the
-adjacent `openmirlab-dev/plugins/openmirlab/CLAUDE.md`. This audio-tool package
+Read [README.md](README.md) for the current user-facing contract, install
+workflow, and upstream acknowledgments before implementing a backend.
+OpenMIRLab's current constitution lives in the adjacent `openmirlab-dev/plugins/openmirlab/CLAUDE.md`. This audio-tool package
 is outside its usual inference-only template. Its compiled audio-tool scope
 and public GitHub source are explicitly approved by Paul; a general org
 audio-tool category remains a separate policy follow-up.
@@ -36,8 +35,9 @@ audio-tool category remains a separate policy follow-up.
   re-implement engine algorithms. The Python/Numba stretcher is a
   non-blocking research lane; never describe it as an engine replacement.
 - The source version lives only in `src/pytimestretch/__about__.py`.
-- `docs/blueprints/plan.md` is the status index; grounded plans and thoughts
-  live in their sibling directories and are tracked in this repository.
+- `docs/blueprints/` contains optional local planning and measurement notes.
+  Keep it untracked, ignored, and excluded from distributions. Public docs and
+  verification must stand alone without these files.
 
 ## Development order
 
@@ -56,8 +56,21 @@ audio-tool category remains a separate policy follow-up.
 The Python research lane (blind listening, voice/mixed material, creative
 control) runs in parallel and never gates these steps.
 
-The thought is the detailed work specification; do not treat its proposed
-interface as implemented behavior until tests and docs advance together.
+The README and executable tests define implemented behavior. If local design
+notes are present, treat proposed interfaces as plans until tests and docs
+advance together.
+
+## Install and attribution
+
+This is a Python package with C++ native extensions. Document installation
+through uv: source checkout uses `uv sync --python 3.12 --no-dev`; a downloaded
+wheel uses `uv venv --python 3.12` and `uv pip install <matching-wheel>`.
+Run user scripts with `uv run --no-project python <script>` in that environment.
+Source builds require a C++17 toolchain; matching wheels contain both engines.
+
+README acknowledgments credit the engine and binding authors and the reference
+projects pedalboard, pylibrb, python-stretch, and pyrubberband with their specific
+contributions. Keep that provenance aligned with NOTICE.
 
 ## Verification
 

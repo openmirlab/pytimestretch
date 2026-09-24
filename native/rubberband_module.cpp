@@ -300,8 +300,7 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
     in.frames = common.frames;
     in.target_frames = common.target_frames;
     in.options = options;
-    // Measured (step 3, docs/blueprints/thoughts/2026-09-24-rubberband-
-    // binding-measurements.md): including the leading (0, 0) row in the
+    // Including the leading (0, 0) row in the
     // key-frame map is a genuine R3Stretcher::updateRatioFromMap() bug, not
     // a caller mistake -- with m_consumedInputDuration == 0 it computes the
     // initial ratio as map.begin()->second / map.begin()->first, i.e. 0/0,

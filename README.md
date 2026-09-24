@@ -12,7 +12,9 @@ engines. pytimestretch gives them one small Python interface: pass a NumPy
 array, choose a duration, pitch, or timing map, and receive an array with a
 predictable shape, dtype, and frame count.
 
-Both engines are compiled into the package and called directly in memory.
+This is a Python package with C++ native extensions, not a pure-Python
+implementation. Both engines are compiled into the package and called
+directly in memory.
 Processing needs no system Rubber Band installation, command-line subprocess,
 intermediate WAV file, or runtime dependency on another Python wrapper.
 
@@ -31,9 +33,20 @@ The audio algorithms are the work of the upstream engine authors:
 - **Wenzel Jakob and contributors** — [nanobind](https://github.com/wjakob/nanobind),
   which connects the C++ engines to Python and NumPy.
 
-[pyrubberband](https://github.com/bmcfee/pyrubberband) and
-[python-stretch](https://github.com/gregogiudici/python-stretch) informed the
-API comparison and early experiments; they are not runtime dependencies.
+The binding and build design also draws on these reference projects:
+
+- **Spotify and contributors** — [pedalboard](https://github.com/spotify/pedalboard),
+  a reference for Rubber Band's single-file build, offline processing, and
+  platform-specific FFT configuration.
+- **pawel-glomski and contributors** — [pylibrb](https://github.com/pawel-glomski/pylibrb),
+  a reference for nanobind bindings to `RubberBandStretcher`, including its
+  start-delay and preferred-padding APIs.
+- **gregogiudici and contributors** — [python-stretch](https://github.com/gregogiudici/python-stretch),
+  a reference for Signalsmith's nanobind integration and latency padding/trimming.
+- **bmcfee and contributors** — [pyrubberband](https://github.com/bmcfee/pyrubberband),
+  a reference for frame-major arrays, API comparisons, and early experiments.
+
+These projects are design references, not runtime dependencies.
 See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 
 ## Features
@@ -46,6 +59,8 @@ See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 - Mono or multichannel, frame-major NumPy arrays; exact output frame counts,
   preserved input dtype, and no input mutation.
 
+## Scope
+
 These are offline, whole-buffer operations. File I/O, resampling, loudness
 normalization, beat detection, musical decisions, and real-time playback
 belong to the caller.
@@ -54,14 +69,18 @@ belong to the caller.
 
 ### From source
 
-Use Python 3.10 or newer, Git, and a C++17 toolchain (GCC, Clang, or MSVC).
-The native build uses CMake 3.24 or newer and scikit-build-core. Build in an
-activated Python environment:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git,
+and provide a C++17 toolchain (GCC, Clang, or MSVC). Python 3.10 or newer is
+required; the example selects Python 3.12, which uv can provision. The native
+build uses CMake 3.24 or newer and scikit-build-core; the isolated build
+installs its Python build dependencies and obtains CMake when needed.
+
+Clone the pinned source tag and let uv create `.venv` and install the package:
 
 ```bash
 git clone --branch v0.1.0 --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
-python -m pip install .
+uv sync --python 3.12 --no-dev
 ```
 
 If you already cloned without submodules, run
@@ -72,10 +91,14 @@ compiled from these vendored sources; a system `librubberband` is not used.
 
 The [GitHub Actions runs](https://github.com/openmirlab/pytimestretch/actions)
 provide wheel artifacts. Download and unzip the artifact for your platform,
-then install the wheel matching your Python version and architecture:
+then install the wheel matching your Python version and architecture.
+A matching wheel already contains the compiled engines, so installing it
+requires no C++ compiler. In a separate working directory (outside the source
+checkout), create an environment matching the wheel's Python version:
 
 ```bash
-python -m pip install "/path/to/the-matching-wheel.whl"
+uv venv --python 3.12
+uv pip install "/path/to/the-matching-cp312-wheel.whl"
 ```
 
 CI currently builds and tests **CPython 3.10–3.13** on:
@@ -92,7 +115,10 @@ not versioned releases; downloading them through GitHub requires sign-in.
 
 ## Quick start
 
-This example needs only pytimestretch and its NumPy dependency:
+This example needs only pytimestretch and its NumPy dependency. Save it as
+`quick_start.py` in the directory where you installed the package and run
+`uv run --no-project python quick_start.py`. This uses the existing `.venv`
+without changing its installed packages.
 
 ```python
 import numpy as np
@@ -122,7 +148,8 @@ alternative = pts.time_stretch(audio, sr, duration_ratio=1.5, backend="signalsmi
 print(pts.available_backends())  # ('rubberband', 'signalsmith') in a full build
 ```
 
-For files, install `soundfile` separately (`python -m pip install soundfile`):
+For files, install `soundfile` separately with `uv pip install soundfile`,
+then run the following script with `uv run --no-project python process_file.py`:
 
 ```python
 import soundfile as sf
@@ -233,11 +260,9 @@ After changing native code, rebuild the installed package with
 and pushes to `main`; macOS/Windows CI runs for PRs labeled `all-platforms`
 or via manual dispatch.
 
-Engine measurements and bounded listening notes live in
-[docs/blueprints/thoughts](docs/blueprints/thoughts/). They are evidence for
-those sources, ratios, builds, and listeners, not a universal ranking of
-engines or a claim of audio-quality parity. Real-audio fixtures are not
-bundled with the package.
+The signal tests provide bounded evidence for their inputs, ratios, and
+builds; they do not establish a universal ranking of engines or audio-quality
+parity. Real-audio fixtures are not bundled with the package.
 
 ## License
 
