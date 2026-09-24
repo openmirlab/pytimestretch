@@ -17,6 +17,9 @@
   measured placement, pitch, crosstalk, and determinism.
 - Added the Signalsmith Stretch backend (1.3.2 + main@57b93f4) through
   `.exact()`; the same contract suite passes on both engines.
+- Added `pitch_shift`, `time_warp` (integer source→output markers), and
+  `semitones`/`formants`/`quality` options on both engines, with teaching
+  errors for pyrubberband's `n_steps=`, `time_map=`, and `rbargs=`.
 - Licensed the package under GPL-2.0-or-later with a NOTICE of vendored
   components; the repository remains private and unpublished.
 - Added a Linux wheel CI workflow (manylinux x86_64, CPython 3.10–3.13) that

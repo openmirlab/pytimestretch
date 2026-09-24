@@ -37,25 +37,24 @@
   locally in Docker (174 tests pass inside each wheel); not yet run on
   GitHub because the branch is unpushed (step 6).
 
-## ▶ Next — listening, then push and first CI run
+## ✅ Shipped (local branch) — marker warp, pitch shift, quality presets
 
-- Paul's blind listening of Rubber Band, Signalsmith, and the Python
-  prototype (local page); record per-cell judgments in the measurement notes.
-- Push `feat/binding-first-engines` when Paul approves, and confirm the
-  first GitHub Actions run.
-- Open follow-ups from the measurements: `ChannelsApart` vs `ChannelsTogether`
-  on real stereo mixes, R3 speed (faster FFT or an R2 option), Rubber Band's
-  ~13 ms early peak at ×3.0.
+- `time_warp`, `pitch_shift`, and `semitones`/`formants`/`quality`
+  (`"high"`/`"balanced"`) on both engines, with
+  [round-2 listening](thoughts/2026-09-25-blind-listening-round-2.md). See the
+  [plan](plans/2026-09-24-warp-pitch-quality.md).
 
-## ▶ Next — marker warp, pitch shift, quality presets
+## ▶ Next — push, first CI run, Tactus trial
 
-- `time_warp`, `pitch_shift`, and `semitones`/`formants`/`quality` on both
-  engines. See the [plan](plans/2026-09-24-warp-pitch-quality.md).
+- Push `feat/binding-first-engines` when Paul approves and confirm the first
+  GitHub Actions run; then try the API from a real Tactus workflow.
 
 ## ⇄ Parallel — Python research lane (non-blocking)
 
-- Record the pending blind-listening judgments, add voice and mixed music,
-  and try one concrete creative-control task. Never gates the bindings.
+- Round 1 judged the first prototype worst in 4 of 6 cells, so it is not an
+  everyday engine. The lane continues only for a concrete creative-control
+  task (PaulStretch-style extreme stretching is the leading candidate).
+  Never gates the bindings.
 
 ## ⏸ Future — evidence-gated
 

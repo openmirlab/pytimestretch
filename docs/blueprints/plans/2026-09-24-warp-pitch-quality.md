@@ -78,6 +78,17 @@ time_warp(audio, sample_rate, *, markers,
   R2 is not faster than R3 + `WindowShort`, or listening finds `"balanced"`
   no better than `"fast"`, record it and ask Paul whether to keep both.
 
+## Decided after round-2 listening (2026-09-25)
+
+- `quality="fast"` (R2) removed: no audible benefit over `"balanced"`, no
+  real speed edge, flat pure pitch shifts, worst on the bass. Both engines
+  support `"high"` and `"balanced"`; `quality="fast"` raises an error that
+  points to `"balanced"`.
+- `formants` default stays `"shift"`; docs and examples recommend
+  `"preserve"` for voices.
+- Warp placement is not further compensated: Rubber Band high was judged
+  best on a ±33 % swing warp despite larger click-peak offsets.
+
 ## Approach
 
 Each step keeps `uv run pytest -q` and `ruff` green; stop and report if a

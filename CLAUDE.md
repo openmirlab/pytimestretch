@@ -10,13 +10,20 @@ to resolve, not an established exception.
 ## State and ownership
 
 - Private GitHub repository; no PyPI publishing or public release approved.
-- `time_stretch` (in `stretch.py`) owns the public contract: validation,
-  teaching errors for pyrubberband/librosa habits (`rate=`, channels-first
-  arrays), exact output length, and dtype preservation. `_backends.py` owns
-  backend names and the native `stretch(buffer, sample_rate, duration_ratio,
-  target_frames)` contract. `native/rubberband_module.cpp` (offline, R3, `OptionChannelsApart`) and
-  `native/signalsmith_module.cpp` (`.exact()`, fixed seed, short input
-  zero-padded past its seek threshold) implement it. `tests/contract/` runs against every built engine
+- `stretch.py` holds the public functions `time_stretch`, `pitch_shift`,
+  and `time_warp`, which all build a marker array and share one private
+  render path (buffer copy, dispatch, result checks, dtype restore).
+  `_validation.py` owns every input rule and the teaching errors for
+  pyrubberband/librosa habits (`rate=`, `n_steps=`, `time_map=`, `rbargs=`,
+  channels-first arrays). `_backends.py` owns backend names and native
+  contract v2: `render(buffer, sample_rate, markers, pitch_scale,
+  preserve_formants, quality)`; each native module declares
+  `SUPPORTED_QUALITY` (the one owner of engine capability).
+  `native/rubberband_module.cpp` (offline R3, `OptionChannelsApart`,
+  key-frame map without the leading `(0, 0)`) and
+  `native/signalsmith_module.cpp` (`.exact()` for two markers, a scheduled
+  `outputSeek`/`process`/`flush` stream for more, fixed seed, short input
+  zero-padded) implement it. `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:

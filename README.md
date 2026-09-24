@@ -16,27 +16,48 @@ Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
-**Both engines work.** `time_stretch` calls Rubber Band v4.0.0 (R3 engine,
-offline; the default) or Signalsmith Stretch 1.3.2 (`backend="signalsmith"`),
-both compiled from vendored sources into the package — no system library
-needed:
+**Both engines work.** Three functions call Rubber Band v4.0.0 (the default)
+or Signalsmith Stretch 1.3.2 (`backend="signalsmith"`), both compiled from
+vendored sources into the package — no system library needed:
 
 ```python
+import numpy as np
 import soundfile as sf
-import pytimestretch
+import pytimestretch as pts
 
-audio, sr = sf.read("loop.wav", dtype="float32")   # (frames, channels)
-slower = pytimestretch.time_stretch(audio, sr, duration_ratio=1.5)
+audio, sr = sf.read("loop.wav", dtype="float32")        # (frames, channels)
+
+# Change duration, keep pitch. duration_ratio = output length / input length.
+slower = pts.time_stretch(audio, sr, duration_ratio=1.5)
 assert len(slower) == round(len(audio) * 1.5)
+
+# Change pitch, keep duration. For voices, preserve formants.
+vocal_up = pts.pitch_shift(audio, sr, semitones=3, formants="preserve")
+
+# Warp: move source frames to output frames (e.g. a hit at 0.52 s onto beat 2
+# at 120 BPM). Integer (source, output) pairs from (0, 0) to (len, output_len).
+hit, beat2 = int(round(0.52 * sr)), int(round(0.5 * sr))
+warped = pts.time_warp(audio, sr, markers=[(0, 0), (hit, beat2), (len(audio), len(audio))])
 ```
 
-`duration_ratio` is output length / input length (> 1 = longer/slower) —
-the opposite direction of pyrubberband/librosa `rate`. The output has the
-exact computed length and the input's dtype (engines compute in float32).
-`available_backends()` reports `("rubberband", "signalsmith")`. Measured
-placement, pitch, precision, and speed are in `docs/blueprints/thoughts/`;
-blind listening has not been done, so no audio-quality claim is made. Building from source needs CMake
-≥ 3.24 and a C++17 compiler. There is no PyPI release.
+- `duration_ratio` runs the opposite way to pyrubberband/librosa `rate`
+  (`rate=2.0` there is `duration_ratio=0.5` here); passing `rate=`,
+  `n_steps=`, `time_map=`, or `rbargs=` raises an error that shows the
+  equivalent. `time_stretch` and `time_warp` also take `semitones=`.
+- `formants="shift"` (default) lets the spectral envelope move with the
+  pitch; use `"preserve"` for voices — it was clearly preferred on a vocal
+  in blind listening.
+- `quality="high"` (default) or `"balanced"`: about 3× faster on Rubber
+  Band and 1.7× on Signalsmith; no audible difference was heard on a
+  full-mix tempo change.
+- Output length is exact, dtype matches the input (engines compute in
+  float32), and the input is never modified.
+
+In two rounds of blind listening (one listener, short loops) Rubber Band was
+preferred wherever a difference was heard; Signalsmith was close on a bass
+pitch shift. Measurements and listening notes are in
+`docs/blueprints/thoughts/`. Building from source needs CMake ≥ 3.24 and a
+C++17 compiler. There is no PyPI release.
 
 ```bash
 git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
@@ -52,19 +73,18 @@ The repository is private; clone access requires OpenMIRLab permission.
 
 - The caller owns musical intent: source, target duration or timing, engine
   choice, and any creative parameter choices.
-- `pytimestretch` will own the NumPy-facing contract, input validation,
-  exact output length/alignment policy, and clear errors.
-- Audio is processed by direct C++ bindings to Rubber Band first, then
-  Signalsmith Stretch, behind one shared contract. Neither binding exists
-  yet. A Python engine may later ship only as a specialist option backed by
-  its own listening evidence.
+- `pytimestretch` owns the NumPy-facing contract, input validation,
+  exact output length and marker placement, and clear errors.
+- Audio is processed by direct C++ bindings to Rubber Band and Signalsmith
+  Stretch behind one shared contract. A Python engine may later ship only as
+  a specialist option backed by its own listening evidence.
 - The package will not take over Tactus arrangement semantics, a DAW session,
   or a real-time playback engine.
 
-The proposed API and exact acceptance checks are in the
-[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md).
-The [bootstrap plan](docs/blueprints/plans/2026-09-24-package-bootstrap.md)
-records what this first setup does and does not implement.
+Design and evidence live in `docs/blueprints/`: the
+[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md),
+the [binding plan](docs/blueprints/plans/2026-09-24-binding-first-engines.md),
+and the [warp/pitch/quality plan](docs/blueprints/plans/2026-09-24-warp-pitch-quality.md).
 
 ## Licensing and distribution
 
