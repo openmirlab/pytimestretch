@@ -56,9 +56,14 @@ uv run ruff check .
 uv build
 ```
 
-For future backend tests, use opt-in integration markers and report the exact
-engine library revisions and build configurations. Default tests must remain
-offline and run without either backend installed.
+The engines are git submodules under `extern/` (Rubber Band v4.0.0,
+Signalsmith Stretch 1.3.2 + main@57b93f4, Signalsmith Linear 0.3.1),
+compiled by scikit-build-core/CMake into `pytimestretch._<engine>` modules;
+never link a system library. `uv sync` installs non-editably, so after a C++
+change run `uv sync --reinstall-package pytimestretch`. Tests stay offline;
+the contract suite runs against every compiled engine plus a test-only fake.
+Report engine revisions and build defines (`engine_info()`) with any
+measurement.
 
 ## Licensing gate
 

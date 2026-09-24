@@ -18,12 +18,15 @@ Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 This repository is **not an audio processor yet**. The public call,
 `pytimestretch.time_stretch(audio, sample_rate, *, duration_ratio=...)`,
-validates its input and then raises `BackendUnavailableError`, because no
-native engine module is built yet. `available_backends()` returns an empty
-tuple until one is. There is no PyPI release.
+validates its input and then raises `BackendUnavailableError`: the native
+Rubber Band module (upstream v4.0.0, compiled from vendored sources, no
+system library needed) builds and reports `engine_info()`, but has no
+`stretch` yet. `available_backends()` returns an empty tuple until an engine
+can process audio. Building from source needs CMake ≥ 3.24 and a C++17
+compiler. There is no PyPI release.
 
 ```bash
-git clone https://github.com/openmirlab/pytimestretch.git
+git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
 uv sync --group dev
 uv run pytest -q

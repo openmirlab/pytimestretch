@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling>=1.26"]
-build-backend = "hatchling.build"
+requires = ["scikit-build-core>=0.10", "nanobind>=2.4"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "pytimestretch"
@@ -17,11 +17,33 @@ dependencies = ["numpy>=1.24"]
 [project.urls]
 Repository = "https://github.com/openmirlab/pytimestretch"
 
-[tool.hatch.version]
-path = "src/pytimestretch/__about__.py"
+[tool.scikit-build]
+wheel.packages = ["src/pytimestretch"]
+minimum-version = "0.10"
+build-dir = "build/{wheel_tag}"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pytimestretch"]
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "src/pytimestretch/__about__.py"
+
+[tool.scikit-build.sdist]
+# extern/** carries the vendored engine sources the native build compiles;
+# the sdist->wheel path (what `uv build` exercises) needs them present.
+# Drop upstream subtrees this build never touches (docs, packaging glue for
+# other host plugins, the nested cmd/util submodule) to keep the sdist lean.
+include = ["extern/**"]
+exclude = [
+    "extern/rubberband/otherbuilds",
+    "extern/rubberband/vamp",
+    "extern/rubberband/ladspa-lv2",
+    "extern/rubberband/dotnet",
+    "extern/rubberband/cross",
+    "extern/rubberband/com",
+    "extern/signalsmith-stretch/cmd",
+    "extern/signalsmith-stretch/web",
+    "extern/signalsmith-linear/tests",
+    "**/.git",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.9", "build>=1.2"]

@@ -24,15 +24,18 @@ StretchFn = Callable[[np.ndarray, int, float, int], np.ndarray]
 
 
 def _load_rubberband() -> StretchFn:
-    from pytimestretch import _rubberband
+    # `from ... import stretch` so a native module that is built but lacks
+    # `stretch` raises ImportError (reported as BackendUnavailableError),
+    # not AttributeError.
+    from pytimestretch._rubberband import stretch
 
-    return _rubberband.stretch
+    return stretch
 
 
 def _load_signalsmith() -> StretchFn:
-    from pytimestretch import _signalsmith
+    from pytimestretch._signalsmith import stretch
 
-    return _signalsmith.stretch
+    return stretch
 
 
 # Plain module-level dict so tests can inject a fake backend via
