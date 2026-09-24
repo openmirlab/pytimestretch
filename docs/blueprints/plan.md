@@ -47,6 +47,11 @@
   on real stereo mixes, R3 speed (faster FFT or an R2 option), Rubber Band's
   ~13 ms early peak at ×3.0.
 
+## ▶ Next — marker warp, pitch shift, quality presets
+
+- `time_warp`, `pitch_shift`, and `semitones`/`formants`/`quality` on both
+  engines. See the [plan](plans/2026-09-24-warp-pitch-quality.md).
+
 ## ⇄ Parallel — Python research lane (non-blocking)
 
 - Record the pending blind-listening judgments, add voice and mixed music,
