@@ -953,14 +953,17 @@ def test_time_warp_validates_before_backend_availability() -> None:
         pytimestretch.time_warp([1, 2, 3], SAMPLE_RATE, markers=None, backend="rubberband")
 
 
-# --- Real engines: temporary truth until steps 3/4 -----------------------
+# --- Real engines: temporary truth until step 4 ---------------------------
 #
-# Both native modules currently implement only the plain two-marker,
-# pitch_scale=1.0, preserve_formants=False, quality="high" path (native
-# contract v2, step 1); every other combination raises a native
-# std::invalid_argument ("not implemented yet"), wrapped as EngineError by
-# _render. This section pins that temporary behavior so it's visible when
-# steps 3/4 replace it with real pitch/formant/warp/quality support.
+# Rubber Band (step 3) now implements native contract v2 in full: pitch
+# shift, formant control, quality presets, and marker warp all succeed.
+# Signalsmith's native module (step 4) still implements only the plain
+# two-marker, pitch_scale=1.0, preserve_formants=False, quality="high"
+# path; every other combination raises a native std::invalid_argument ("not
+# implemented yet"), wrapped as EngineError by _render, or, for an
+# unsupported quality name, UnsupportedOptionError from the facade before
+# the native call. This section pins Signalsmith's temporary behavior and
+# Rubber Band's now-real behavior so the remaining gap is visible.
 
 
 def test_signalsmith_fast_quality_raises_unsupported_option_error() -> None:
@@ -977,32 +980,63 @@ def test_signalsmith_fast_quality_raises_unsupported_option_error() -> None:
 
 
 @pytest.mark.parametrize(
-    "call",
+    ("call", "expected_frames"),
     [
-        lambda audio: pytimestretch.pitch_shift(
-            audio, SAMPLE_RATE, semitones=2.0, backend="rubberband"
+        pytest.param(
+            lambda audio: pytimestretch.pitch_shift(
+                audio, SAMPLE_RATE, semitones=2.0, backend="rubberband"
+            ),
+            1000,
+            id="pitch_shift_semitones",
         ),
-        lambda audio: pytimestretch.pitch_shift(
-            audio, SAMPLE_RATE, semitones=0.0, formants="preserve",
-            backend="rubberband",
+        pytest.param(
+            lambda audio: pytimestretch.pitch_shift(
+                audio, SAMPLE_RATE, semitones=0.0, formants="preserve",
+                backend="rubberband",
+            ),
+            1000,
+            id="pitch_shift_preserve_formants",
         ),
-        lambda audio: pytimestretch.time_stretch(
-            audio, SAMPLE_RATE, duration_ratio=1.5, quality="balanced",
-            backend="rubberband",
+        pytest.param(
+            lambda audio: pytimestretch.time_stretch(
+                audio, SAMPLE_RATE, duration_ratio=1.5, quality="balanced",
+                backend="rubberband",
+            ),
+            target_frames(1000, 1.5),
+            id="time_stretch_quality_balanced",
         ),
-        lambda audio: pytimestretch.time_warp(
-            audio, SAMPLE_RATE,
-            markers=[(0, 0), (300, 400), (1000, 1200)],
-            backend="rubberband",
+        pytest.param(
+            lambda audio: pytimestretch.time_stretch(
+                audio, SAMPLE_RATE, duration_ratio=1.5, quality="fast",
+                backend="rubberband",
+            ),
+            target_frames(1000, 1.5),
+            id="time_stretch_quality_fast",
+        ),
+        pytest.param(
+            lambda audio: pytimestretch.time_warp(
+                audio, SAMPLE_RATE,
+                markers=[(0, 0), (300, 400), (1000, 1200)],
+                backend="rubberband",
+            ),
+            1200,
+            id="time_warp_k3_markers",
         ),
     ],
 )
-def test_rubberband_unimplemented_options_raise_engine_error(call) -> None:
+def test_rubberband_full_contract_v2_options_succeed(call, expected_frames: int) -> None:
+    # Step 3 (native contract v2 for Rubber Band): every combination that
+    # used to raise the "not implemented yet" EngineError now succeeds with
+    # the exact length/shape/dtype native contract v2 promises.
     try:
         pytimestretch._backends.load_backend("rubberband")
     except pytimestretch.BackendUnavailableError:
         pytest.skip("rubberband is unavailable in this environment")
     audio = sine_440(1000).astype(np.float32)
-    with pytest.raises(EngineError) as excinfo:
-        call(audio)
-    assert "not implemented yet" in str(excinfo.value)
+
+    out = call(audio)
+
+    assert isinstance(out, np.ndarray)
+    assert out.dtype == np.float32
+    assert out.shape == (expected_frames,)
+    assert np.isfinite(out).all()

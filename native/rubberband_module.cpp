@@ -1,20 +1,38 @@
 /**
  * rubberband_module.cpp — nanobind entry point for pytimestretch._rubberband.
  *
- * ★ Implements native contract v2, which the facade
+ * ★ Implements native contract v2 in full, which the facade
  * (src/pytimestretch/stretch.py) dispatches to: `render(buffer, sample_rate,
  * markers, pitch_scale, preserve_formants, quality) ->
  * float32[channels, markers[-1][1]]`. `markers` is an int64 `(K, 2)` array
  * of `(source_frame, output_frame)` pairs; `frames` is read from
  * `markers[-1][0]` (and checked against the buffer's own frame count) and
  * `target_frames` from `markers[-1][1]`, rather than being passed
- * separately, so there is exactly one source of truth for both. This step
- * (native contract v2, behavior-preserving) implements only the plain
- * two-marker path with no pitch/formant/quality change — the same offline
- * pipeline `stretch()` ran before — and raises `std::invalid_argument` for
- * every other combination (K > 2 markers, `pitch_scale != 1.0`,
- * `preserve_formants`, `quality != "high"`) as a deliberate "not
- * implemented yet" for steps 3/4 to fill in, not a validation failure.
+ * separately, so there is exactly one source of truth for both.
+ *
+ * `quality` selects the engine build (`OptionProcessOffline |
+ * OptionThreadingNever | OptionChannelsApart` always applied): "high" ->
+ * `OptionEngineFiner` (R3, standard window); "balanced" ->
+ * `OptionEngineFiner | OptionWindowShort` (R3, short window, faster);
+ * "fast" -> `OptionEngineFaster` (R2, its default transient/detector/phase
+ * settings). Any other string is `std::invalid_argument`. `pitch_scale` is
+ * fixed for the life of the (offline) stretcher, passed to its constructor
+ * before `study()`. `preserve_formants` selects `OptionFormantPreserved`
+ * (else `OptionFormantShifted`), also a construction-time option.
+ * `markers` with `K == 2` keep the original two-marker path (time ratio
+ * only, no key-frame map, per the header: the map "does not determine the
+ * overall stretch ratio"). `K > 2` additionally builds a
+ * `std::map<size_t, size_t>` from every row *except the first* and calls
+ * `setKeyFrameMap()` after the ratios are set and before
+ * `study()`/`process()`, per the header's ordering contract. The first row
+ * is always `(0, 0)` (the facade's own marker invariant) and is
+ * deliberately excluded: measured (see
+ * docs/blueprints/thoughts/2026-09-24-rubberband-binding-measurements.md)
+ * that including it hits a real bug in `R3Stretcher::updateRatioFromMap()`
+ * — it computes the initial ratio as the first map entry's
+ * `second / first`, i.e. `0 / 0` = NaN, which RubberBand silently resets to
+ * "no stretch at all" for the whole render, not just the first segment.
+ *
  * `run_offline()` still owns the shared two-pass offline pipeline (study()
  * then process()/retrieve() in blocks, offline mode's internal
  * start-delay/pad compensation, and trim-or-zero-pad to the caller-computed
@@ -22,10 +40,11 @@
  * of it, sharing `validate_render()` for the contract v2 input checks, so
  * there is exactly one place that knows the Rubber Band offline block loop
  * and exactly one place that knows contract v2 validation.
- * `SUPPORTED_QUALITY` names the quality presets Rubber Band can honor once
- * complete ("high"/"balanced"/"fast"); this step does not yet implement
- * "balanced"/"fast", so `render()` still rejects them, same as any other
- * unimplemented option. `engine_info()` remains from step 2.
+ * `_stretch_diagnostics()` also reports `engine_version` — the value
+ * `RubberBandStretcher::getEngineVersion()` reports for the engine actually
+ * constructed (2 for "fast", 3 for "high"/"balanced") — rather than
+ * assuming the mapping, since that's exactly the fact measurements need to
+ * confirm. `engine_info()` is unchanged from step 2.
  *
  * Reads: rubberband/RubberBandStretcher.h (vendored, extern/rubberband).
  */
@@ -37,6 +56,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -58,9 +78,11 @@ using RubberBand::RubberBandStretcher;
 
 namespace {
 
-// Decided engine setup (binding-first plan, step 3): offline mode, R3
-// (Finer) engine, no internal threading (we already release the GIL and
-// call from a single worker thread per render() call).
+// Decided engine setup (binding-first plan, step 3): offline mode, no
+// internal threading (we already release the GIL and call from a single
+// worker thread per render() call). The engine/window (quality) and
+// formant options vary per call; see quality_options() and
+// formant_option() below.
 //
 // OptionChannelsApart, NOT the plan's originally proposed
 // OptionChannelsTogether: measured (tests/engines/test_rubberband.py,
@@ -74,11 +96,33 @@ namespace {
 // OptionChannelsApart gives bit-exact 0.0 crosstalk on the same input.
 // Report this deviation from the plan back to Paul; revisit only by his
 // decision.
-constexpr RubberBandStretcher::Options kEngineOptions =
+constexpr RubberBandStretcher::Options kBaseEngineOptions =
     RubberBandStretcher::OptionProcessOffline |
-    RubberBandStretcher::OptionEngineFiner |
     RubberBandStretcher::OptionThreadingNever |
     RubberBandStretcher::OptionChannelsApart;
+
+/** quality -> the engine/window options it selects, per the plan's step 3
+ * decision: "high" = R3 standard window (current default); "balanced" = R3
+ * + OptionWindowShort (faster, some quality cost per the header); "fast" =
+ * R2 (OptionEngineFaster) with its own default transient/detector/phase
+ * settings. Any other string is a genuine bad call, not an unimplemented
+ * feature -- std::invalid_argument, same family as an unknown formants/
+ * markers value would be if this binding validated those itself. */
+RubberBandStretcher::Options quality_options(const std::string &quality) {
+    if (quality == "high") {
+        return RubberBandStretcher::OptionEngineFiner;
+    }
+    if (quality == "balanced") {
+        return RubberBandStretcher::OptionEngineFiner |
+               RubberBandStretcher::OptionWindowShort;
+    }
+    if (quality == "fast") {
+        return RubberBandStretcher::OptionEngineFaster;
+    }
+    throw std::invalid_argument(
+        "rubberband: quality \"" + quality +
+        "\" is not one of \"high\", \"balanced\", \"fast\"");
+}
 
 using InputBuffer =
     nb::ndarray<const float, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
@@ -100,6 +144,7 @@ struct OfflineResult {
     size_t start_delay = 0;
     size_t preferred_start_pad = 0;
     size_t block = 0;
+    int engine_version = 0;
 };
 
 /** Contract v2 inputs, resolved and validated by validate_render(). */
@@ -107,6 +152,9 @@ struct RenderInputs {
     size_t channels;
     size_t frames;
     size_t target_frames;
+    RubberBandStretcher::Options options;
+    std::map<size_t, size_t> key_frame_map;  // empty when markers has K == 2
+    bool has_key_frame_map = false;
 };
 
 /**
@@ -121,9 +169,12 @@ struct RenderInputs {
  */
 OfflineResult run_offline(const std::vector<const float *> &input,
                            size_t channels, size_t frames, size_t sample_rate,
-                           double time_ratio) {
-    RubberBandStretcher stretcher(sample_rate, channels, kEngineOptions,
-                                   time_ratio, /*initialPitchScale=*/1.0);
+                           double time_ratio, double pitch_scale,
+                           RubberBandStretcher::Options options,
+                           const std::map<size_t, size_t> *key_frame_map) {
+    RubberBandStretcher stretcher(sample_rate, channels, options, time_ratio,
+                                   pitch_scale);
+    int engine_version = stretcher.getEngineVersion();
 
     // A block size the header explicitly recommends bounding by
     // getProcessSizeLimit() (524288 as of v3.3); 4096 is a plain,
@@ -139,8 +190,16 @@ OfflineResult run_offline(const std::vector<const float *> &input,
     stretcher.setExpectedInputDuration(frames);
     stretcher.setMaxProcessSize(block);
 
+    // Per the header: the time/pitch ratios (both already set via the
+    // constructor above) must be set before setKeyFrameMap(), and the map
+    // must be set before the first study()/process() call.
+    if (key_frame_map != nullptr) {
+        stretcher.setKeyFrameMap(*key_frame_map);
+    }
+
     OfflineResult result;
     result.block = block;
+    result.engine_version = engine_version;
     result.channels.assign(channels, {});
 
     std::vector<const float *> in_ptrs(channels);
@@ -257,14 +316,15 @@ float *place_and_own(const std::vector<std::vector<float>> &raw,
 
 /**
  * Validate the shared inputs to render()/_stretch_diagnostics() and return
- * (channels, frames, target_frames). Derives frames from the buffer itself
- * and target_frames from `markers[-1][1]`, checking `markers[-1][0]` against
- * the buffer's own frame count rather than trusting it. Then enforces this
- * step's behavior-preserving scope: raises `std::invalid_argument` (->
- * Python ValueError) for any marker/pitch/formant/quality combination this
- * step does not implement yet, so a caller sees a deliberate "not
- * implemented" rather than either silently ignoring the option or a
- * validation-shaped error.
+ * (channels, frames, target_frames, options, key_frame_map). Derives frames
+ * from the buffer itself and target_frames from `markers[-1][1]`, checking
+ * `markers[-1][0]` against the buffer's own frame count rather than
+ * trusting it. Resolves `quality` to engine/window options (raising
+ * `std::invalid_argument` for an unknown name, matching how an unknown
+ * `formants`/`markers` value would be a bad call rather than an
+ * unimplemented feature) and ORs in the formant option. For `K > 2`
+ * markers, builds the key-frame map from every row; `K == 2` leaves it
+ * empty (the original two-marker path, no map).
  */
 RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
                               const MarkersBuffer &markers, double pitch_scale,
@@ -304,30 +364,43 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
             std::to_string(marker_target));
     }
 
-    // Behavior-preserving scope for this step: only the plain two-marker,
-    // no-pitch, no-formant, "high"-quality path runs the pipeline below.
-    // Steps 3/4 implement the rest; every other combination is a genuine
-    // unimplemented feature, not a bad call, so it raises invalid_argument
-    // rather than runtime_error.
-    if (k != 2) {
-        throw std::invalid_argument(
-            "rubberband: markers with more than two entries (warp) not "
-            "implemented yet");
-    }
-    if (pitch_scale != 1.0) {
-        throw std::invalid_argument(
-            "rubberband: pitch_scale != 1.0 not implemented yet");
-    }
-    if (preserve_formants) {
-        throw std::invalid_argument(
-            "rubberband: preserve_formants not implemented yet");
-    }
-    if (quality != "high") {
-        throw std::invalid_argument("rubberband: quality \"" + quality +
-                                     "\" not implemented yet");
+    if (!std::isfinite(pitch_scale) || pitch_scale <= 0.0) {
+        throw std::runtime_error(
+            "rubberband: pitch_scale must be finite and > 0, got " +
+            std::to_string(pitch_scale));
     }
 
-    return {channels, frames, static_cast<size_t>(marker_target)};
+    RubberBandStretcher::Options options =
+        kBaseEngineOptions | quality_options(quality) |
+        (preserve_formants ? RubberBandStretcher::OptionFormantPreserved
+                            : RubberBandStretcher::OptionFormantShifted);
+
+    RenderInputs in;
+    in.channels = channels;
+    in.frames = frames;
+    in.target_frames = static_cast<size_t>(marker_target);
+    in.options = options;
+    // Measured (step 3, docs/blueprints/thoughts/2026-09-24-rubberband-
+    // binding-measurements.md): including the leading (0, 0) row in the
+    // key-frame map is a genuine R3Stretcher::updateRatioFromMap() bug, not
+    // a caller mistake -- with m_consumedInputDuration == 0 it computes the
+    // initial ratio as map.begin()->second / map.begin()->first, i.e. 0/0,
+    // which is NaN and triggers RubberBand's own "NaN or Inf presented"
+    // warning (silently resetting the ratio to 1.0, no stretch at all,
+    // for the whole render). The trailing (frames, target_frames) row is
+    // safe to include (verified no such reset). So the map is built from
+    // every row except the first: rows 1..k-1, which are still "every
+    // marker but the always-(0,0) start."
+    in.has_key_frame_map = (k > 2);
+    if (in.has_key_frame_map) {
+        for (size_t i = 1; i < k; ++i) {
+            int64_t source = markers(i, 0);
+            int64_t target = markers(i, 1);
+            in.key_frame_map[static_cast<size_t>(source)] =
+                static_cast<size_t>(target);
+        }
+    }
+    return in;
 }
 
 std::vector<const float *> channel_pointers(const InputBuffer &buffer,
@@ -355,9 +428,12 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
     {
         std::vector<const float *> in_ptrs =
             channel_pointers(buffer, in.channels, in.frames);
+        const std::map<size_t, size_t> *key_frame_map =
+            in.has_key_frame_map ? &in.key_frame_map : nullptr;
         nb::gil_scoped_release release;
         result = run_offline(in_ptrs, in.channels, in.frames,
-                              static_cast<size_t>(sample_rate), time_ratio);
+                              static_cast<size_t>(sample_rate), time_ratio,
+                              pitch_scale, in.options, key_frame_map);
     }
 
     float *data = place_and_own(result.channels, in.channels,
@@ -370,7 +446,9 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
 
 /** Measurement-only variant sharing run_offline() and validate_render():
  * reports raw_frames (before trim/pad), start_delay, preferred_start_pad,
- * and the block size used, instead of the trimmed/padded audio itself. */
+ * the block size used, and the engine_version actually constructed (2 for
+ * "fast"/R2, 3 for "high"/"balanced"/R3), instead of the trimmed/padded
+ * audio itself. */
 nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
                               MarkersBuffer markers, double pitch_scale,
                               bool preserve_formants, std::string quality) {
@@ -384,9 +462,12 @@ nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
     {
         std::vector<const float *> in_ptrs =
             channel_pointers(buffer, in.channels, in.frames);
+        const std::map<size_t, size_t> *key_frame_map =
+            in.has_key_frame_map ? &in.key_frame_map : nullptr;
         nb::gil_scoped_release release;
         result = run_offline(in_ptrs, in.channels, in.frames,
-                              static_cast<size_t>(sample_rate), time_ratio);
+                              static_cast<size_t>(sample_rate), time_ratio,
+                              pitch_scale, in.options, key_frame_map);
     }
 
     size_t raw_frames = result.channels.empty() ? 0 : result.channels[0].size();
@@ -395,6 +476,7 @@ nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
     info["start_delay"] = result.start_delay;
     info["preferred_start_pad"] = result.preferred_start_pad;
     info["block"] = result.block;
+    info["engine_version"] = result.engine_version;
     return info;
 }
 
@@ -425,10 +507,9 @@ nb::dict engine_info() {
 
 NB_MODULE(_rubberband, m) {
     m.doc() = "Native Rubber Band binding: engine_info() and the render() native contract v2.";
-    // Quality names Rubber Band can honor once steps 3/4 land; the single
-    // place that knows this engine's capability. The facade (step 2) uses
-    // it to raise UnsupportedOptionError; this step does not gate on it
-    // itself (validate_render() rejects every quality but "high" outright).
+    // Quality names Rubber Band can honor; the single place that knows this
+    // engine's capability. The facade (step 2) uses it to raise
+    // UnsupportedOptionError before calling render() at all.
     m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced", "fast");
     m.def("engine_info", &engine_info, "Report the compiled Rubber Band build configuration.");
     m.def("render", &render, nb::arg("buffer"), nb::arg("sample_rate"),

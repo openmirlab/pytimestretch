@@ -77,3 +77,50 @@ kept for listening next to the earlier probe outputs.
    explicit R2 option. Measure before choosing.
 3. **Listening.** Blind listening of these renders against Signalsmith is
    still needed before any quality claim.
+
+## Step 3 of the warp plan: pitch, formants, quality, markers
+
+Measured after `render()` gained pitch, formant, quality, and key-frame
+support (`quality`: high = R3, balanced = R3 + `OptionWindowShort`,
+fast = R2). The high/two-marker path still reproduces the tables above.
+
+**Key-frame map bug avoided.** `R3Stretcher::updateRatioFromMap()` sets the
+initial ratio to the first map entry's `output / source`; a `(0, 0)` entry
+makes that 0/0 = NaN and the render comes out unstretched. The binding
+builds the map from every marker except the leading `(0, 0)`.
+
+**Pitch** (440 Hz sine, cents error; re-checked independently):
+
+| quality | +7 st | −5 st | +7 st at ×1.5 |
+| --- | ---: | ---: | ---: |
+| high | −0.13 | +0.25 | −0.13 |
+| balanced | −0.13 | +0.25 | −0.13 |
+| fast (R2) | −5.5 | **−31.0** | −0.13 |
+
+R2's pure pitch shift at ratio 1.0 is audibly flat by up to a third of a
+semitone; it is accurate when combined with a stretch.
+
+**Formants.** On a synthetic vowel only the 2600 Hz formant was
+measurable (harmonic spacing too coarse for 700/1220 Hz): shift moved it by
+×2^(5/12) within 1.4 %, preserve kept it within 3.4 %, on high and fast.
+Low-formant behavior needs listening on a real vocal.
+
+**Speed** (4 s at ×1.5, warmed median): high 232 / 470 ms (mono/stereo),
+balanced 71 / 145 ms, fast 74 / 131 ms. Balanced and fast are both ~3×
+faster than high; their order is not consistent.
+
+**Marker placement.** Click trains at 100–250 ms spacing: steady ×1.5
+within 3.9 ms (high) and 13.2 ms (fast). Alternating ×0.5/×2 every marker
+(a 4× ratio jump) lost clicks on high (17/30 at 100 ms). A more realistic
+case — humanized clicks warped onto an exact grid, local ratio jitter
+±5/10/20 %, 24 markers, spacing 100/250/500 ms, no clicks lost:
+
+| jitter | high max offset | fast max offset |
+| --- | ---: | ---: |
+| ±5 % | 4.6–6.2 ms | 5.5–8.0 ms |
+| ±10 % | 6.9–15.8 ms | 5.1–8.8 ms |
+| ±20 % | 19.3–23.1 ms | 6.9–7.4 ms |
+
+R3's key-frame placement loosens as local ratios vary; R2 stays within
+~9 ms. R3 sounds better and pitches accurately, R2 places markers more
+tightly — a trade-off for Paul once Signalsmith's warp is measured.
