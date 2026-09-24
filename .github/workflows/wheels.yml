@@ -1,0 +1,61 @@
+# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md.
+#
+# Linux only for now (plan review, 2026-09-24): macOS and Windows jobs are
+# added before public release. Triggers are kept narrow because this is a
+# private repo and Actions minutes are not free: pull_request and manual
+# dispatch always run, but push only runs for main so a chain of commits on
+# a feature branch doesn't rebuild wheels on every push.
+name: Wheels
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - run: uv sync --group dev
+
+      - run: uv run ruff check .
+
+      - run: uv run pytest -q
+
+  wheels:
+    name: Build Linux wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.2.1
+
+      - name: Build sdist
+        run: uv build --sdist
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: wheels-linux
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
