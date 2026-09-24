@@ -61,21 +61,22 @@ time_warp(audio, sample_rate, *, markers,
 |---|---|
 | `semitones` | Finite real; positive = up. `pitch_shift` is `time_stretch` at ratio 1.0 and requires it. |
 | `formants` | `"shift"` (default, both engines' default) or `"preserve"` (keep the spectral envelope; for voices). |
-| `quality` | `"high"` (current behavior) or `"fast"` (engine-specific faster setting chosen in step 3/4 by measurement). |
+| `quality` | `"high"` (default, current behavior), `"balanced"`, or `"fast"`. Rubber Band: R3 standard window / R3 + `OptionWindowShort` / R2 (`OptionEngineFaster`). Signalsmith: `presetDefault` / `presetCheaper` / unsupported → `UnsupportedOptionError` suggesting `"balanced"` (no silent aliasing). Measurements must confirm speed increases in that order. |
 | `markers` | Sequence or `(K, 2)` array of integer `(source_frame, output_frame)`; first `(0, 0)`, last `(len(audio), output_frames)`; both columns strictly increasing; `K ≥ 2`. Output length is exactly the last output frame. A minimum marker spacing is set from step 3/4 measurements and enforced with an error naming it. |
 | Placement | Each interior marker's source frame lands within a measured, pinned tolerance of its output frame. |
 | Teaching errors | pyrubberband `n_steps=` → `semitones`; `time_map=` → `markers`; `rbargs=` → explain presets; existing `rate=` family unchanged. |
-| Unchanged | Shapes, dtype preservation, exact length, immutability, error classes, no silent fallback. |
+| Errors | New `UnsupportedOptionError(PytimestretchError, ValueError)` for an option an engine cannot honor. |
+| Unchanged | Shapes, dtype preservation, exact length, immutability, existing error classes, no silent fallback. |
 
-## Open questions
+## Decided at plan review (2026-09-24)
 
-1. **Listening material for round 2 (blocks step 5 only).** Paul wanted
-   rytho-library loops, then wrote "不管rytho-library"; which he meant is
-   unresolved. Steps 0–4 do not depend on it.
-2. **`quality="fast"` for Rubber Band (decided by step 3 evidence).**
-   Pre-registered rule: choose R3 + `OptionWindowShort` if it is at least 2×
-   faster than `"high"` and not judged worse than R2 on the round-2 loops;
-   otherwise R2 (`OptionEngineFaster`). Signalsmith uses `presetCheaper`.
+- Round-2 listening material: pick loops directly from rytho-library (the
+  surveyed drum, stereo hi-hat, bass, guitar, pad, vocal, and full-mix
+  loops); they stay local and are never committed or published.
+- Both Rubber Band fast variants are supported, as `quality="balanced"`
+  (R3 + `OptionWindowShort`) and `quality="fast"` (R2). If measurements show
+  R2 is not faster than R3 + `WindowShort`, or listening finds `"balanced"`
+  no better than `"fast"`, record it and ask Paul whether to keep both.
 
 ## Approach
 
@@ -100,7 +101,8 @@ gate fails.
    validation, exact length from the last marker, pitch-shift length
    unchanged, and parameter errors.
 3. **Rubber Band.** `setPitchScale`, `OptionFormantPreserved`,
-   `setKeyFrameMap` plus `setTimeRatio` for K > 2, and the fast variant.
+   `setKeyFrameMap` plus `setTimeRatio` for K > 2, and both faster variants
+   (`"balanced"`, `"fast"`).
    Measure: pitch accuracy (+7 and −5 semitones on sines), combined
    stretch + pitch, formant envelope stability on a synthetic vowel
    (preserve vs shift), marker placement on click trains across marker
@@ -111,11 +113,11 @@ gate fails.
    `setFormantFactor(1, compensatePitch=true)` with auto base, markers via
    variable-size `process()` blocks (block ≈ `intervalSamples()`) with
    `outputSeek()` pre-roll, `flush()`, and latency-compensated schedule, and
-   `presetCheaper` for fast. Same measurements as step 3; pin tolerances.
+   `presetCheaper` for `"balanced"`; `"fast"` raises `UnsupportedOptionError`. Same measurements as step 3; pin tolerances.
    Short inputs keep the existing padding rule.
 5. **Listening and docs.** Round-2 blind listening on real loops (material
    per open question 1): warp to a grid, ±semitone shifts with and without
-   formant preservation on a vocal, and fast vs high. Then update README
+   formant preservation on a vocal, and high vs balanced vs fast. Then update README
    (examples for all three functions), CLAUDE.md, CHANGELOG, measurement
    notes, and `plan.md`.
 
