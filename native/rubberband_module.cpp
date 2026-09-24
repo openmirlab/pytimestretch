@@ -1,53 +1,18 @@
 /**
  * rubberband_module.cpp — nanobind entry point for pytimestretch._rubberband.
  *
- * ★ Implements native contract v2 in full, which the facade
- * (src/pytimestretch/stretch.py) dispatches to: `render(buffer, sample_rate,
+ * ★ Implements native contract v2 in full: `render(buffer, sample_rate,
  * markers, pitch_scale, preserve_formants, quality) ->
- * float32[channels, markers[-1][1]]`. `markers` is an int64 `(K, 2)` array
- * of `(source_frame, output_frame)` pairs; `frames` is read from
- * `markers[-1][0]` (and checked against the buffer's own frame count) and
- * `target_frames` from `markers[-1][1]`, rather than being passed
- * separately, so there is exactly one source of truth for both.
+ * float32[channels, markers[-1][1]]`, which the facade
+ * (src/pytimestretch/stretch.py) dispatches to. `run_offline()` owns the
+ * shared two-pass offline pipeline (study() then process()/retrieve() in
+ * blocks, start-delay/pad compensation, trim-or-zero-pad to the exact
+ * length); `render()` and `_stretch_diagnostics()` are thin callers of it
+ * and of `validate_render()` (contract v2 checks plus this engine's own
+ * quality/key-frame-map resolution), so each concern has exactly one owner.
  *
- * `quality` selects the engine build (`OptionProcessOffline |
- * OptionThreadingNever | OptionChannelsApart` always applied): "high" ->
- * `OptionEngineFiner` (R3, standard window); "balanced" ->
- * `OptionEngineFiner | OptionWindowShort` (R3, short window, faster). Any
- * other string is `std::invalid_argument` (`"fast"` -> R2/OptionEngineFaster
- * was removed 2026-09-25 after blind listening round 2 found no audible
- * benefit and no real speed edge over "balanced"). `pitch_scale` is
- * fixed for the life of the (offline) stretcher, passed to its constructor
- * before `study()`. `preserve_formants` selects `OptionFormantPreserved`
- * (else `OptionFormantShifted`), also a construction-time option.
- * `markers` with `K == 2` keep the original two-marker path (time ratio
- * only, no key-frame map, per the header: the map "does not determine the
- * overall stretch ratio"). `K > 2` additionally builds a
- * `std::map<size_t, size_t>` from every row *except the first* and calls
- * `setKeyFrameMap()` after the ratios are set and before
- * `study()`/`process()`, per the header's ordering contract. The first row
- * is always `(0, 0)` (the facade's own marker invariant) and is
- * deliberately excluded: measured (see
- * docs/blueprints/thoughts/2026-09-24-rubberband-binding-measurements.md)
- * that including it hits a real bug in `R3Stretcher::updateRatioFromMap()`
- * — it computes the initial ratio as the first map entry's
- * `second / first`, i.e. `0 / 0` = NaN, which RubberBand silently resets to
- * "no stretch at all" for the whole render, not just the first segment.
- *
- * `run_offline()` still owns the shared two-pass offline pipeline (study()
- * then process()/retrieve() in blocks, offline mode's internal
- * start-delay/pad compensation, and trim-or-zero-pad to the caller-computed
- * exact length); `render()` and `_stretch_diagnostics()` are thin callers
- * of it, sharing `validate_render()` for the contract v2 input checks, so
- * there is exactly one place that knows the Rubber Band offline block loop
- * and exactly one place that knows contract v2 validation.
- * `_stretch_diagnostics()` also reports `engine_version` — the value
- * `RubberBandStretcher::getEngineVersion()` reports for the engine actually
- * constructed (always 3 now that "high"/"balanced" are the only qualities)
- * — rather than assuming the mapping, since that's exactly the fact
- * measurements need to confirm. `engine_info()` is unchanged from step 2.
- *
- * Reads: rubberband/RubberBandStretcher.h (vendored, extern/rubberband).
+ * Reads: render_contract.h, rubberband/RubberBandStretcher.h (vendored,
+ * extern/rubberband).
  */
 
 #include <nanobind/nanobind.h>
@@ -64,10 +29,16 @@
 #include <utility>
 #include <vector>
 
+#include "render_contract.h"
 #include "rubberband/RubberBandStretcher.h"
 
 namespace nb = nanobind;
 using RubberBand::RubberBandStretcher;
+using pytimestretch::native::channel_pointers;
+using pytimestretch::native::InputBuffer;
+using pytimestretch::native::make_output;
+using pytimestretch::native::MarkersBuffer;
+using pytimestretch::native::validate_common;
 
 #ifndef PYTIMESTRETCH_RB_FFT
 #define PYTIMESTRETCH_RB_FFT "unknown"
@@ -122,18 +93,6 @@ RubberBandStretcher::Options quality_options(const std::string &quality) {
         "rubberband: quality \"" + quality +
         "\" is not one of \"high\", \"balanced\"");
 }
-
-using InputBuffer =
-    nb::ndarray<const float, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
-
-// Native contract v2's marker array: int64 (K, 2) rows of
-// (source_frame, output_frame), C-contiguous. The facade guarantees the
-// invariants (first row (0, 0), last row (frames, target), both columns
-// strictly increasing, K >= 2); this binding re-derives frames/target from
-// the last row and still checks frames against the buffer, rather than
-// trusting the facade blindly.
-using MarkersBuffer =
-    nb::ndarray<const int64_t, nb::shape<-1, 2>, nb::c_contig, nb::device::cpu>;
 
 /** Deinterleaved (per-channel) result of the offline pipeline, before the
  * caller trims or zero-pads it to target_frames, plus the diagnostics the
@@ -291,12 +250,11 @@ OfflineResult run_offline(const std::vector<const float *> &input,
 /** Trim or zero-pad `raw[c]` (after dropping `start_delay` leading frames,
  * if any — offline mode documents this as always 0, but the plan asks the
  * code to compensate any remaining delay rather than assume the doc) to
- * exactly `target_frames`, writing into a freshly allocated, owned,
- * C-contiguous float32 (channels, target_frames) buffer. */
-float *place_and_own(const std::vector<std::vector<float>> &raw,
-                      size_t channels, size_t start_delay,
-                      size_t target_frames) {
-    float *data = new float[channels * target_frames];
+ * exactly `target_frames`, writing into `data`, an already-allocated
+ * C-contiguous float32 (channels, target_frames) buffer (from
+ * render_contract.h's make_output()). */
+void place_into(float *data, const std::vector<std::vector<float>> &raw,
+                 size_t channels, size_t start_delay, size_t target_frames) {
     for (size_t c = 0; c < channels; ++c) {
         const std::vector<float> &src = raw[c];
         size_t available_after_delay =
@@ -310,7 +268,6 @@ float *place_and_own(const std::vector<std::vector<float>> &raw,
             std::memset(dst + copy_n, 0, (target_frames - copy_n) * sizeof(float));
         }
     }
-    return data;
 }
 
 /**
@@ -329,45 +286,9 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
                               const MarkersBuffer &markers, double pitch_scale,
                               bool preserve_formants,
                               const std::string &quality) {
-    size_t channels = buffer.shape(0);
-    size_t frames = buffer.shape(1);
-    if (channels < 1 || frames < 1) {
-        throw std::runtime_error(
-            "rubberband: buffer must have at least one channel and frame, "
-            "got shape (" +
-            std::to_string(channels) + ", " + std::to_string(frames) + ")");
-    }
-    if (sample_rate <= 0) {
-        throw std::runtime_error("rubberband: sample_rate must be > 0, got " +
-                                  std::to_string(sample_rate));
-    }
-
+    auto common =
+        validate_common(buffer, sample_rate, markers, pitch_scale, "rubberband");
     size_t k = markers.shape(0);
-    if (k < 2) {
-        throw std::runtime_error(
-            "rubberband: markers must have at least 2 rows, got " +
-            std::to_string(k));
-    }
-
-    int64_t marker_frames = markers(k - 1, 0);
-    int64_t marker_target = markers(k - 1, 1);
-    if (marker_frames < 0 || static_cast<size_t>(marker_frames) != frames) {
-        throw std::runtime_error(
-            "rubberband: markers[-1][0] (" + std::to_string(marker_frames) +
-            ") must equal the buffer's frame count (" +
-            std::to_string(frames) + ")");
-    }
-    if (marker_target < 1) {
-        throw std::runtime_error(
-            "rubberband: markers[-1][1] must be >= 1, got " +
-            std::to_string(marker_target));
-    }
-
-    if (!std::isfinite(pitch_scale) || pitch_scale <= 0.0) {
-        throw std::runtime_error(
-            "rubberband: pitch_scale must be finite and > 0, got " +
-            std::to_string(pitch_scale));
-    }
 
     RubberBandStretcher::Options options =
         kBaseEngineOptions | quality_options(quality) |
@@ -375,9 +296,9 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
                             : RubberBandStretcher::OptionFormantShifted);
 
     RenderInputs in;
-    in.channels = channels;
-    in.frames = frames;
-    in.target_frames = static_cast<size_t>(marker_target);
+    in.channels = common.channels;
+    in.frames = common.frames;
+    in.target_frames = common.target_frames;
     in.options = options;
     // Measured (step 3, docs/blueprints/thoughts/2026-09-24-rubberband-
     // binding-measurements.md): including the leading (0, 0) row in the
@@ -400,15 +321,6 @@ RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
         }
     }
     return in;
-}
-
-std::vector<const float *> channel_pointers(const InputBuffer &buffer,
-                                             size_t channels, size_t frames) {
-    std::vector<const float *> ptrs(channels);
-    for (size_t c = 0; c < channels; ++c) {
-        ptrs[c] = buffer.data() + c * frames;
-    }
-    return ptrs;
 }
 
 nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
@@ -435,12 +347,10 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
                               pitch_scale, in.options, key_frame_map);
     }
 
-    float *data = place_and_own(result.channels, in.channels,
-                                 result.start_delay, in.target_frames);
-
-    nb::capsule owner(data, [](void *p) noexcept { delete[] static_cast<float *>(p); });
-    size_t shape[2] = {in.channels, in.target_frames};
-    return nb::ndarray<nb::numpy, float, nb::ndim<2>>(data, 2, shape, owner);
+    auto out = make_output(in.channels, in.target_frames);
+    place_into(out.data(), result.channels, in.channels, result.start_delay,
+               in.target_frames);
+    return out;
 }
 
 /** Measurement-only variant sharing run_offline() and validate_render():
