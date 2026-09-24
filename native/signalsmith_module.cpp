@@ -371,9 +371,25 @@ StretchDiagnostics run_signalsmith_warp(
     // onto the next checkpoint that has real input to spare. See
     // signalsmith_schedule.h's plan_warp_schedule() for the derivation and
     // the chunking/rounding that follows it.
+    // The engine's own analysis-block cadence fires every intervalSamples()
+    // output samples, counted by a state member that persists across
+    // process() calls and is primed by outputSeek()'s internal pre-roll
+    // call: that call generates exactly outputLatency() output samples
+    // starting from a forced first block at its own local index 0, so
+    // after it returns the counter sits at outputLatency() % interval
+    // (or, when that's an exact multiple, back at interval, i.e. "fires
+    // immediately next sample" == phase 0). grid_phase is the number of
+    // local output samples, from the very start of *our* first chunk,
+    // until the next analysis block fires -- see plan_warp_schedule()'s
+    // "grid alignment" rationale for why the schedule needs to cut chunks
+    // exactly there.
+    int64_t interval = stretch.intervalSamples();
+    int64_t output_latency_mod = stretch.outputLatency() % interval;
+    int64_t grid_phase = (interval - output_latency_mod) % interval;
+
     WarpSchedule plan = plan_warp_schedule(
         markers, static_cast<int64_t>(frames), static_cast<int64_t>(target_frames),
-        seek_len, stretch.intervalSamples());
+        seek_len, interval, grid_phase);
 
     for (const auto &chunk : plan.chunks) {
         stretch.process(offset_view(in_full, seek_len + chunk.input_offset),
@@ -595,15 +611,15 @@ nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
  * plus tail_reserve/process_end_output/seek_len/last_rate. */
 nb::dict plan_warp_schedule_py(MarkersBuffer markers, int64_t frames,
                                 int64_t target_frames, int64_t seek_len,
-                                int64_t interval) {
+                                int64_t interval, int64_t grid_phase = 0) {
     std::vector<std::pair<int64_t, int64_t>> marker_pairs;
     size_t k = markers.shape(0);
     marker_pairs.reserve(k);
     for (size_t i = 0; i < k; ++i) {
         marker_pairs.emplace_back(markers(i, 0), markers(i, 1));
     }
-    WarpSchedule plan =
-        plan_warp_schedule(marker_pairs, frames, target_frames, seek_len, interval);
+    WarpSchedule plan = plan_warp_schedule(marker_pairs, frames, target_frames, seek_len,
+                                            interval, grid_phase);
 
     nb::list chunks;
     for (const auto &c : plan.chunks) {
@@ -677,7 +693,7 @@ NB_MODULE(_signalsmith, m) {
           "block/interval/path instead of the audio itself.");
     m.def("_plan_warp_schedule", &plan_warp_schedule_py, nb::arg("markers"),
           nb::arg("frames"), nb::arg("target_frames"), nb::arg("seek_len"),
-          nb::arg("interval"),
+          nb::arg("interval"), nb::arg("grid_phase") = 0,
           "Test-only: expose signalsmith_schedule.h's plan_warp_schedule() "
           "so its invariants can be checked directly.");
 }

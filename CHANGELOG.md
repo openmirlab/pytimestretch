@@ -20,6 +20,8 @@
 - Added `pitch_shift`, `time_warp` (integer source→output markers), and
   `semitones`/`formants`/`quality` options on both engines, with teaching
   errors for pyrubberband's `n_steps=`, `time_map=`, and `rbargs=`.
+- Fixed Signalsmith warp drift for markers whose output spans are not
+  whole frames; constant-ratio warps now match `time_stretch`.
 - Licensed the package under GPL-2.0-or-later with a NOTICE of vendored
   components; the repository remains private and unpublished.
 - Added a Linux wheel CI workflow (manylinux x86_64, CPython 3.10–3.13) that

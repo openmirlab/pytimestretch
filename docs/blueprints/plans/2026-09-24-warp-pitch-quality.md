@@ -62,7 +62,7 @@ time_warp(audio, sample_rate, *, markers,
 | `semitones` | Finite real; positive = up. `pitch_shift` is `time_stretch` at ratio 1.0 and requires it. |
 | `formants` | `"shift"` (default, both engines' default) or `"preserve"` (keep the spectral envelope; for voices). |
 | `quality` | `"high"` (default, current behavior), `"balanced"`, or `"fast"`. Rubber Band: R3 standard window / R3 + `OptionWindowShort` / R2 (`OptionEngineFaster`). Signalsmith: `presetDefault` / `presetCheaper` / unsupported → `UnsupportedOptionError` suggesting `"balanced"` (no silent aliasing). Measurements must confirm speed increases in that order. |
-| `markers` | Sequence or `(K, 2)` array of integer `(source_frame, output_frame)`; first `(0, 0)`, last `(len(audio), output_frames)`; both columns strictly increasing; `K ≥ 2`. Output length is exactly the last output frame. A minimum marker spacing is set from step 3/4 measurements and enforced with an error naming it. |
+| `markers` | Sequence or `(K, 2)` array of integer `(source_frame, output_frame)`; first `(0, 0)`, last `(len(audio), output_frames)`; both columns strictly increasing; `K ≥ 2`. Output length is exactly the last output frame. No minimum spacing is enforced (see "Decided after audit" below). |
 | Placement | Each interior marker's source frame lands within a measured, pinned tolerance of its output frame. |
 | Teaching errors | pyrubberband `n_steps=` → `semitones`; `time_map=` → `markers`; `rbargs=` → explain presets; existing `rate=` family unchanged. |
 | Errors | New `UnsupportedOptionError(PytimestretchError, ValueError)` for an option an engine cannot honor. |
@@ -88,6 +88,23 @@ time_warp(audio, sample_rate, *, markers,
   `"preserve"` for voices.
 - Warp placement is not further compensated: Rubber Band high was judged
   best on a ±33 % swing warp despite larger click-peak offsets.
+
+## Decided after audit (2026-09-25)
+
+- **No minimum marker spacing.** Measured with a marker on every click at
+  steady ×1.5: Rubber Band high stays within 3.2 ms down to 20 ms spacing;
+  Signalsmith loses one click at 20–30 ms and is 10–20 ms off at 25–50 ms,
+  a transient-localization floor of the engine itself (unchanged by the
+  scheduling fix below). One engine-independent bound would either reject
+  valid Rubber Band calls or promise placement Signalsmith cannot deliver,
+  so any strictly increasing markers are accepted and the docs advise
+  ≥ 100 ms spacing on Signalsmith.
+- **Signalsmith warp scheduling fix.** The engine runs its analysis on its
+  own output-sample cadence across `process()` calls; chunks cut only at
+  markers let that cadence land mid-chunk, where the engine interpolated
+  with the chunk's rounded local rate and drifted. The schedule now also
+  cuts at the engine's analysis grid, so constant-ratio markers reproduce
+  the plain stretch byte-for-byte except the flush tail.
 
 ## Approach
 

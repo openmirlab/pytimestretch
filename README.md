@@ -35,7 +35,8 @@ assert len(slower) == round(len(audio) * 1.5)
 vocal_up = pts.pitch_shift(audio, sr, semitones=3, formants="preserve")
 
 # Warp: move source frames to output frames (e.g. a hit at 0.52 s onto beat 2
-# at 120 BPM). Integer (source, output) pairs from (0, 0) to (len, output_len).
+# at 120 BPM). Integer (source, output) pairs from (0, 0) to (len, output_len);
+# with backend="signalsmith", keep markers >= 100 ms apart for tight timing.
 hit, beat2 = int(round(0.52 * sr)), int(round(0.5 * sr))
 warped = pts.time_warp(audio, sr, markers=[(0, 0), (hit, beat2), (len(audio), len(audio))])
 ```

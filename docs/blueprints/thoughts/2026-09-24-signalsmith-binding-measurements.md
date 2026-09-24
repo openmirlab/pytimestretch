@@ -108,3 +108,35 @@ At ±5 % local-ratio variation every configuration stays within ~11 ms. At
 marker boundaries, where each engine smooths the rate change around its
 processing point. Improving placement under large ratio changes is an open
 question for Paul, not a pinned guarantee.
+
+## Scheduling fix and dense markers (2026-09-25)
+
+The warp tables above were measured before a scheduling bug was found:
+with constant-ratio markers whose output spans are non-integer (e.g.
+50 ms × 1.5 = 3307.5 frames), the warp drifted away from the plain
+stretch, while 25 ms and 100 ms spacings matched. Cause: Signalsmith fires
+its analysis on its own output-sample cadence, which persists across
+`process()` calls; when that point fell inside a chunk, the engine placed
+the analysis with that chunk's rounded local rate. The schedule now also
+cuts chunks on the engine's analysis grid (phase taken from
+`outputLatency()` after pre-roll) and evaluates the pre-roll reserve through
+the full marker map.
+
+After the fix, constant ×1.5 markers at 10–250 ms spacing reproduce
+`time_stretch` byte-for-byte in every full second; only the flush tail
+differs. On the humanized grid at ±20 % jitter, high now peaks at
+14–18 ms (was 17–32 ms); no clicks lost. Rubber Band outputs and
+Signalsmith two-marker outputs are unchanged (golden hashes).
+
+Dense click trains with a marker on every click (steady ×1.5), unchanged
+by the fix:
+
+| spacing | ss high | ss balanced | rb high | rb balanced |
+| --- | --- | --- | --- | --- |
+| 20 ms | 7.3 ms, 1 lost | 7.1 ms, 1 lost | 2.3 ms | 5.8 ms |
+| 25 ms | 10.0 ms, 1 lost | 9.9 ms, 1 lost | 2.0 ms | 5.9 ms |
+| 30 ms | 9.4 ms, 1 lost | 10.5 ms | 2.3 ms | 7.6 ms |
+| 50 ms | 20.0 ms | 16.1 ms | 3.2 ms | 6.3 ms |
+
+Signalsmith's transient localization under very dense markers is an engine
+limit; keep its markers ≥ 100 ms apart where timing matters.
