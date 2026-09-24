@@ -16,10 +16,11 @@ Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
-This repository is an **installable scaffold, not an audio processor yet**.
-`pytimestretch.__version__` imports. `stretch_audio(...)` deliberately raises
-`NotImplementedError`. No native binding is built or bundled by this scaffold.
-There is no PyPI release.
+This repository is **not an audio processor yet**. The public call,
+`pytimestretch.time_stretch(audio, sample_rate, *, duration_ratio=...)`,
+validates its input and then raises `BackendUnavailableError`, because no
+native engine module is built yet. `available_backends()` returns an empty
+tuple until one is. There is no PyPI release.
 
 ```bash
 git clone https://github.com/openmirlab/pytimestretch.git

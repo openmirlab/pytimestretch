@@ -83,13 +83,15 @@ second production engine.
 
 ## Proposed first public Python contract
 
-Start with one whole-buffer operation. The exact spelling can change before
-the first audio release, but the semantics below must be settled by tests:
+Start with one whole-buffer operation. Its semantics are now pinned by
+`tests/contract/`; the spelling below is the implemented facade (see the
+[binding plan](../plans/2026-09-24-binding-first-engines.md) for the
+agent-oriented revisions):
 
 ```python
-output = stretch_audio(
+output = time_stretch(
     audio,                    # np.ndarray: (frames,) or (frames, channels)
-    sample_rate=48_000,
+    48_000,                   # sample_rate
     duration_ratio=1.5,       # output is 1.5x as long; pitch approximately held
     backend="rubberband",     # or "signalsmith"
 )
@@ -102,9 +104,9 @@ output = stretch_audio(
   `(frames, channels)`. Mono 1-D input returns 1-D; 2-D mono/stereo returns
   the same channel count and dimension. Each implementation owns its transposition.
 - Input is finite, nonempty, float audio with a positive integer sample rate
-  and finite positive ratio. Input must not be mutated. Decide whether to
-  accept float64 by conversion or preserve it, and document the output dtype
-  before releasing this call. Do not silently clamp peaks.
+  and finite positive ratio. Input must not be mutated. float32 and float64
+  are accepted; engines compute in float32 and the output dtype matches the
+  input (decided 2026-09-24). Do not silently clamp peaks.
 - Define `target_frames` once at the facade boundary. Proposed rounding is
   `floor(input_frames * duration_ratio + 0.5)` for positive ratios; reject a
   result below one frame. Every backend must return this many frames exactly,

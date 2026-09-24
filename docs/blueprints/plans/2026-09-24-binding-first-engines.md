@@ -79,8 +79,17 @@ conversion, pinned by tests.
 ## Proposed public contract (ratified by approving this plan)
 
 ```python
-out = stretch_audio(audio, *, sample_rate, duration_ratio, backend="rubberband")
+out = time_stretch(audio, sample_rate, *, duration_ratio, backend="rubberband")
 ```
+
+Revised during step 1 (Paul, 2026-09-24) for agents fluent in NumPy/SciPy
+and pyrubberband/librosa habits: renamed to `time_stretch`; `rate=`,
+`speed=`, `stretch_factor=` and similar keywords raise a `TypeError` that
+shows the equivalent `duration_ratio`; 2-D input with more than 64 channels
+is rejected as likely channels-first with an `audio.T` hint;
+`available_backends()` and `py.typed` added. `target_frames=` was not added
+after a [probe](../thoughts/2026-09-24-target-frames-agent-probe.md) showed
+no benefit; the docstring shows `duration_ratio=target / len(audio)`.
 
 | Aspect | Rule |
 |---|---|

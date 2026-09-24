@@ -10,8 +10,13 @@ to resolve, not an established exception.
 ## State and ownership
 
 - Private GitHub repository; no PyPI publishing or public release approved.
-- The package only imports and raises a deliberate `NotImplementedError` for
-  `stretch_audio`. Neither engine is operational here yet.
+- `time_stretch` (in `stretch.py`) owns the public contract: validation,
+  teaching errors for pyrubberband/librosa habits (`rate=`, channels-first
+  arrays), exact output length, and dtype preservation. `_backends.py` owns
+  backend names and the native `stretch(buffer, sample_rate, duration_ratio,
+  target_frames)` contract. Neither native engine module exists yet, so real
+  backends raise `BackendUnavailableError`; `tests/contract/` runs against a
+  test-only fake and will cover each engine as it lands.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
   call the Rubber Band and Signalsmith Stretch C++ libraries directly. Do not

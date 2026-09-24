@@ -12,7 +12,7 @@ license = "LicenseRef-Private"
 license-files = ["LICENSE", "NOTICE"]
 classifiers = ["Private :: Do Not Upload"]
 maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
-dependencies = []
+dependencies = ["numpy>=1.24"]
 
 [project.urls]
 Repository = "https://github.com/openmirlab/pytimestretch"
