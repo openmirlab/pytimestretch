@@ -70,6 +70,12 @@ uv build
 
 The repository is private; clone access requires OpenMIRLab permission.
 
+CI builds and tests CPython 3.10–3.13 wheels for Linux x86_64
+(`manylinux_2_28`), macOS arm64 and x86_64, and Windows AMD64. Wheels are
+private GitHub Actions artifacts, not published packages. Linux CI runs on
+every pull request and on pushes to `main`; macOS/Windows builds run only
+with the `all-platforms` PR label or a manual workflow dispatch.
+
 ## Intended boundary
 
 - The caller owns musical intent: source, target duration or timing, engine
@@ -103,6 +109,10 @@ constitution gains an audio-tool category that permits a compiled core.
 
 ## Verification
 
-`uv run pytest -q` checks the current import/stub contract. `uv build`
-checks that the package can be built. Real-audio golden fixtures and both
-backend contract suites are future work; no audio-quality parity is claimed.
+`uv run pytest -q` runs the shared contract suite against both compiled
+engines and a test-only fake, plus engine-specific signal measurements.
+`uv run ruff check .` checks Python lint. `uv build` builds an sdist and a
+wheel from it; CI installs and tests each platform wheel. Real-audio
+listening evidence is recorded in `docs/blueprints/thoughts/`; committed
+real-audio golden fixtures remain future work. No audio-quality parity
+between engines is claimed.

@@ -73,6 +73,12 @@ the contract suite runs against every compiled engine plus a test-only fake.
 Report engine revisions and build defines (`engine_info()`) with any
 measurement.
 
+Linux wheel CI runs on pull requests and `main` pushes. The separate
+`wheels-all-platforms.yml` workflow builds macOS arm64/x86_64 and Windows
+AMD64 wheels only for PRs labeled `all-platforms` or manual dispatches.
+All three platforms test installed CPython 3.10–3.13 wheels and log
+`engine_info()`; artifacts remain private and no workflow publishes them.
+
 ## Licensing gate
 
 The package is GPL-2.0-or-later because its wheels compile in Rubber Band;

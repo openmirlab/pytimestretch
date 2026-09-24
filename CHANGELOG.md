@@ -26,3 +26,7 @@
   components; the repository remains private and unpublished.
 - Added a Linux wheel CI workflow (manylinux x86_64, CPython 3.10–3.13) that
   tests every built wheel and never publishes.
+- Added opt-in macOS arm64/x86_64 and Windows AMD64 wheel CI for CPython
+  3.10–3.13, including per-wheel engine metadata. Fixed macOS deployment
+  targets for nanobind's C++17 allocation requirements and added MSVC
+  compilation options; artifacts remain private and unpublished.
