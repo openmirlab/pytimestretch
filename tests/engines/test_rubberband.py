@@ -56,11 +56,11 @@ def impulse_at(t_sec: float, total_sec: float = 4.0, sr: int = SR) -> np.ndarray
     return sig
 
 
-# Measured worst-case |offset| (docs/blueprints/thoughts, step 3 measurement
-# table): ratio 1.5 -> 3.74 ms (click-train case), ratio 0.5 -> 2.20 ms
+# Measured worst-case |offset|: ratio 1.5 -> 3.74 ms (click-train case),
+# ratio 0.5 -> 2.20 ms
 # (click-train case). Tolerances below round each up and add ~2 ms of
 # headroom for jitter across machines; both stay well under the "flag if
-# > 10 ms" line the plan sets (ratio 3.0 alone crossed that at ~13.2 ms and
+# > 10 ms" measurement threshold (ratio 3.0 alone crossed that at ~13.2 ms and
 # is reported separately, not pinned here).
 IMPULSE_TOLERANCE_MS = {1.5: 6.0, 0.5: 5.0}
 

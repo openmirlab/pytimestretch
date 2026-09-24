@@ -10,3 +10,6 @@ dist/
 .env
 wheelhouse/
 dogfood/
+
+# Local planning and measurement notes.
+/docs/blueprints/

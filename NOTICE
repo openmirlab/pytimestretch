@@ -36,6 +36,18 @@ under extern/ and compiled into pytimestretch's binary wheels:
 References, not dependencies
 ----------------------------
 
-pyrubberband (ISC) and python-stretch (MIT) informed the binding design as
-behavior references. pytimestretch contains none of their code and does not
-depend on them at runtime.
+The following projects informed the binding and build design and are not
+runtime dependencies:
+
+- Spotify and contributors, pedalboard: Rubber Band single-file compilation,
+  offline processing, and platform-specific FFT configuration.
+  https://github.com/spotify/pedalboard
+- pawel-glomski and contributors, pylibrb: nanobind mappings of
+  RubberBandStretcher, including start-delay and preferred-padding APIs.
+  https://github.com/pawel-glomski/pylibrb
+- gregogiudici and contributors, python-stretch (MIT): Signalsmith nanobind
+  integration and latency padding/trimming.
+  https://github.com/gregogiudici/python-stretch
+- bmcfee and contributors, pyrubberband (ISC): frame-major array behavior,
+  API comparison, and early experiments.
+  https://github.com/bmcfee/pyrubberband
