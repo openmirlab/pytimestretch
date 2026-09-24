@@ -55,13 +55,35 @@ testpaths = ["tests"]
 target-version = "py310"
 
 [tool.cibuildwheel]
-# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md: Linux
-# only until CI adds macOS and Windows before public release (plan review,
-# 2026-09-24). CPython 3.10-3.13 per requires-python; manylinux x86_64 only
-# for now (skip musllinux, PyPy, and i686 -- no known need yet, and each
-# adds its own build/test cost on a private repo).
+# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md: the
+# `wheels.yml` workflow (pull_request/push/workflow_dispatch, always runs)
+# only builds the Linux selector below -- manylinux x86_64, CPython
+# 3.10-3.13 per requires-python (skip musllinux, PyPy, and i686; no known
+# need yet, and each adds its own build/test cost on a private repo). The
+# macOS/Windows selectors in [tool.cibuildwheel.macos]/[.windows] below are
+# only exercised by the opt-in `wheels-all-platforms.yml` workflow (the
+# "all-platforms" PR label, or manual dispatch) -- they don't change what
+# wheels.yml builds.
 build = "cp3{10,11,12,13}-manylinux_x86_64"
 skip = ["*-musllinux*", "pp*", "*-manylinux_i686"]
 build-verbosity = 1
 test-requires = ["pytest"]
-test-command = "pytest {project}/tests -q"
+# The engine_info() print runs before pytest so each wheel's engine/FFT
+# choice (e.g. macOS vdsp/accelerate vs. Linux/Windows builtin) lands in
+# the CI log even on a fully green run, not just on failure.
+test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info()))\" && pytest {project}/tests -q"
+
+[tool.cibuildwheel.macos]
+# macOS runner is Apple Silicon (macos-14); build both arm64 and x86_64 as
+# separate wheels (not universal2 -- keeps each wheel's engine_info() FFT
+# choice traceable to one arch). cibuildwheel tests the x86_64 wheel under
+# Rosetta 2 automatically on an arm64 runner; arm64 tests run natively.
+# MACOSX_DEPLOYMENT_TARGET is left to cibuildwheel's per-arch default
+# (10.13 x86_64 / 11.0 arm64) -- C++17 and Accelerate/vDSP are both
+# supported well below that floor, so no override is needed.
+build = "cp3{10,11,12,13}-macosx_*"
+archs = ["arm64", "x86_64"]
+
+[tool.cibuildwheel.windows]
+build = "cp3{10,11,12,13}-win_amd64"
+archs = ["AMD64"]
