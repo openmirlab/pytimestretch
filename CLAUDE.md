@@ -65,7 +65,7 @@ advance together.
 This is a Python package with C++ native extensions. Document installation
 through uv: source checkout uses `uv sync --python 3.12 --no-dev`; a downloaded
 wheel uses `uv venv --python 3.12` and `uv pip install <matching-wheel>`.
-Run user scripts with `uv run --no-sync python <script>` in that environment.
+Run user scripts with `uv run --no-project python <script>` in that environment.
 Source builds require a C++17 toolchain; matching wheels contain both engines.
 
 README acknowledgments credit the engine and binding authors and the reference

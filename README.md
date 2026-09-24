@@ -117,7 +117,7 @@ not versioned releases; downloading them through GitHub requires sign-in.
 
 This example needs only pytimestretch and its NumPy dependency. Save it as
 `quick_start.py` in the directory where you installed the package and run
-`uv run --no-sync python quick_start.py`. This uses the existing `.venv`
+`uv run --no-project python quick_start.py`. This uses the existing `.venv`
 without changing its installed packages.
 
 ```python
@@ -149,7 +149,7 @@ print(pts.available_backends())  # ('rubberband', 'signalsmith') in a full build
 ```
 
 For files, install `soundfile` separately with `uv pip install soundfile`,
-then run the following script with `uv run --no-sync python process_file.py`:
+then run the following script with `uv run --no-project python process_file.py`:
 
 ```python
 import soundfile as sf
