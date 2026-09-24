@@ -1,11 +1,14 @@
 """Shared fixtures for the engine-independent contract suite.
 
-Provides a test-only fake backend implementing the native contract
-(``stretch(buffer, sample_rate, duration_ratio, target_frames) ->
-np.ndarray``) via per-channel linear interpolation, and a ``backend``
-fixture parameterized over every registered backend name plus the fake, so
-the same suite runs against real engines once they exist without any
-changes here.
+Provides a test-only fake backend implementing native contract v2
+(``render(buffer, sample_rate, markers, pitch_scale, preserve_formants,
+quality) -> np.ndarray``) via per-channel linear interpolation from
+``markers[0][0]``..``markers[-1][0]`` to ``markers[0][1]``..``markers[-1][1]``,
+and a ``backend`` fixture parameterized over every registered backend name
+plus the fake, so the same suite runs against real engines once they exist
+without any changes here. The fake ignores ``pitch_scale``/
+``preserve_formants``/``quality`` (steps 3/4 give the real engines opinions
+about them); it only needs to honor the marker-derived output length.
 
 Reads: pytimestretch._backends, pytimestretch.errors.
 """
@@ -22,15 +25,19 @@ from pytimestretch.errors import BackendUnavailableError
 def fake_stretch(
     buffer: np.ndarray,
     sample_rate: int,
-    duration_ratio: float,
-    target_frames: int,
+    markers: np.ndarray,
+    pitch_scale: float,
+    preserve_formants: bool,
+    quality: str,
 ) -> np.ndarray:
-    """Native-contract fake: per-channel linear interpolation to target length.
+    """Native-contract-v2 fake: per-channel linear interpolation to
+    ``markers[-1][1]`` frames.
 
     Also overwrites its input buffer after reading, so a test relying on
     caller-array immutability catches a facade that fails to copy.
     """
     channels, frames = buffer.shape
+    target_frames = int(markers[-1, 1])
     src_x = np.arange(frames, dtype=np.float64)
     dst_x = np.linspace(0, max(frames - 1, 0), num=target_frames, dtype=np.float64)
 
@@ -51,6 +58,15 @@ class RaisingFakeStretch:
         raise RuntimeError("fake engine failure")
 
 
+class ValueErrorFakeStretch:
+    """Fake backend that raises a plain ValueError, mimicking a native
+    std::invalid_argument ("not implemented yet") arriving from a real
+    engine's render() -- must still become EngineError, not leak as-is."""
+
+    def __call__(self, *_args: object, **_kwargs: object) -> np.ndarray:
+        raise ValueError("fake: feature not implemented yet")
+
+
 class WrongShapeFakeStretch:
     """Fake backend that returns the wrong shape, for EngineError tests."""
 
@@ -58,10 +74,13 @@ class WrongShapeFakeStretch:
         self,
         buffer: np.ndarray,
         sample_rate: int,
-        duration_ratio: float,
-        target_frames: int,
+        markers: np.ndarray,
+        pitch_scale: float,
+        preserve_formants: bool,
+        quality: str,
     ) -> np.ndarray:
         channels = buffer.shape[0]
+        target_frames = int(markers[-1, 1])
         return np.zeros((channels, target_frames + 1), dtype=np.float32)
 
 
@@ -72,10 +91,13 @@ class WrongDtypeFakeStretch:
         self,
         buffer: np.ndarray,
         sample_rate: int,
-        duration_ratio: float,
-        target_frames: int,
+        markers: np.ndarray,
+        pitch_scale: float,
+        preserve_formants: bool,
+        quality: str,
     ) -> np.ndarray:
         channels = buffer.shape[0]
+        target_frames = int(markers[-1, 1])
         return np.zeros((channels, target_frames), dtype=np.float64)
 
 

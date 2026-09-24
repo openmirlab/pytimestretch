@@ -1,30 +1,45 @@
 /**
  * rubberband_module.cpp — nanobind entry point for pytimestretch._rubberband.
  *
- * ★ Implements the native contract the facade (src/pytimestretch/stretch.py)
- * dispatches to: `stretch(buffer, sample_rate, duration_ratio,
- * target_frames) -> float32[channels, target_frames]`. `run_offline()` owns
- * the shared two-pass offline pipeline (study() then process()/retrieve()
- * in blocks, offline mode's internal start-delay/pad compensation, and
- * trim-or-zero-pad to the caller-computed exact length); `stretch()` and
- * `_stretch_diagnostics()` are thin callers of it so there is exactly one
- * place that knows the Rubber Band offline block loop. `time_ratio` is
- * derived from `target_frames / frames`, not from `duration_ratio` directly,
- * so the engine targets the facade's exact rounded length; `duration_ratio`
- * is kept only to build a clearer error message. `engine_info()` remains
- * from step 2.
+ * ★ Implements native contract v2, which the facade
+ * (src/pytimestretch/stretch.py) dispatches to: `render(buffer, sample_rate,
+ * markers, pitch_scale, preserve_formants, quality) ->
+ * float32[channels, markers[-1][1]]`. `markers` is an int64 `(K, 2)` array
+ * of `(source_frame, output_frame)` pairs; `frames` is read from
+ * `markers[-1][0]` (and checked against the buffer's own frame count) and
+ * `target_frames` from `markers[-1][1]`, rather than being passed
+ * separately, so there is exactly one source of truth for both. This step
+ * (native contract v2, behavior-preserving) implements only the plain
+ * two-marker path with no pitch/formant/quality change — the same offline
+ * pipeline `stretch()` ran before — and raises `std::invalid_argument` for
+ * every other combination (K > 2 markers, `pitch_scale != 1.0`,
+ * `preserve_formants`, `quality != "high"`) as a deliberate "not
+ * implemented yet" for steps 3/4 to fill in, not a validation failure.
+ * `run_offline()` still owns the shared two-pass offline pipeline (study()
+ * then process()/retrieve() in blocks, offline mode's internal
+ * start-delay/pad compensation, and trim-or-zero-pad to the caller-computed
+ * exact length); `render()` and `_stretch_diagnostics()` are thin callers
+ * of it, sharing `validate_render()` for the contract v2 input checks, so
+ * there is exactly one place that knows the Rubber Band offline block loop
+ * and exactly one place that knows contract v2 validation.
+ * `SUPPORTED_QUALITY` names the quality presets Rubber Band can honor once
+ * complete ("high"/"balanced"/"fast"); this step does not yet implement
+ * "balanced"/"fast", so `render()` still rejects them, same as any other
+ * unimplemented option. `engine_info()` remains from step 2.
  *
  * Reads: rubberband/RubberBandStretcher.h (vendored, extern/rubberband).
  */
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
+#include <nanobind/stl/string.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -45,7 +60,7 @@ namespace {
 
 // Decided engine setup (binding-first plan, step 3): offline mode, R3
 // (Finer) engine, no internal threading (we already release the GIL and
-// call from a single worker thread per stretch() call).
+// call from a single worker thread per render() call).
 //
 // OptionChannelsApart, NOT the plan's originally proposed
 // OptionChannelsTogether: measured (tests/engines/test_rubberband.py,
@@ -68,6 +83,15 @@ constexpr RubberBandStretcher::Options kEngineOptions =
 using InputBuffer =
     nb::ndarray<const float, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
 
+// Native contract v2's marker array: int64 (K, 2) rows of
+// (source_frame, output_frame), C-contiguous. The facade guarantees the
+// invariants (first row (0, 0), last row (frames, target), both columns
+// strictly increasing, K >= 2); this binding re-derives frames/target from
+// the last row and still checks frames against the buffer, rather than
+// trusting the facade blindly.
+using MarkersBuffer =
+    nb::ndarray<const int64_t, nb::shape<-1, 2>, nb::c_contig, nb::device::cpu>;
+
 /** Deinterleaved (per-channel) result of the offline pipeline, before the
  * caller trims or zero-pads it to target_frames, plus the diagnostics the
  * plan wants measured. */
@@ -78,11 +102,18 @@ struct OfflineResult {
     size_t block = 0;
 };
 
+/** Contract v2 inputs, resolved and validated by validate_render(). */
+struct RenderInputs {
+    size_t channels;
+    size_t frames;
+    size_t target_frames;
+};
+
 /**
  * Run the shared two-pass Rubber Band offline pipeline (study, then
  * process + retrieve in blocks) over `input` and return every frame the
  * engine produced, undecided on trimming/padding — the two public
- * entry points below own that decision (stretch() trims/pads to
+ * entry points below own that decision (render() trims/pads to
  * target_frames; _stretch_diagnostics() reports raw_frames instead).
  *
  * `input[c]` must point to `frames` contiguous samples for channel `c`.
@@ -224,11 +255,21 @@ float *place_and_own(const std::vector<std::vector<float>> &raw,
     return data;
 }
 
-/** Validate the shared inputs to stretch()/_stretch_diagnostics() and
- * return (channels, frames). */
-std::pair<size_t, size_t> validate(const InputBuffer &buffer,
-                                    int sample_rate, double duration_ratio,
-                                    long long target_frames) {
+/**
+ * Validate the shared inputs to render()/_stretch_diagnostics() and return
+ * (channels, frames, target_frames). Derives frames from the buffer itself
+ * and target_frames from `markers[-1][1]`, checking `markers[-1][0]` against
+ * the buffer's own frame count rather than trusting it. Then enforces this
+ * step's behavior-preserving scope: raises `std::invalid_argument` (->
+ * Python ValueError) for any marker/pitch/formant/quality combination this
+ * step does not implement yet, so a caller sees a deliberate "not
+ * implemented" rather than either silently ignoring the option or a
+ * validation-shaped error.
+ */
+RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
+                              const MarkersBuffer &markers, double pitch_scale,
+                              bool preserve_formants,
+                              const std::string &quality) {
     size_t channels = buffer.shape(0);
     size_t frames = buffer.shape(1);
     if (channels < 1 || frames < 1) {
@@ -241,17 +282,52 @@ std::pair<size_t, size_t> validate(const InputBuffer &buffer,
         throw std::runtime_error("rubberband: sample_rate must be > 0, got " +
                                   std::to_string(sample_rate));
     }
-    if (!(duration_ratio > 0.0) || !std::isfinite(duration_ratio)) {
-        std::ostringstream msg;
-        msg << "rubberband: duration_ratio must be finite and > 0, got "
-            << duration_ratio;
-        throw std::runtime_error(msg.str());
+
+    size_t k = markers.shape(0);
+    if (k < 2) {
+        throw std::runtime_error(
+            "rubberband: markers must have at least 2 rows, got " +
+            std::to_string(k));
     }
-    if (target_frames < 1) {
-        throw std::runtime_error("rubberband: target_frames must be >= 1, got " +
-                                  std::to_string(target_frames));
+
+    int64_t marker_frames = markers(k - 1, 0);
+    int64_t marker_target = markers(k - 1, 1);
+    if (marker_frames < 0 || static_cast<size_t>(marker_frames) != frames) {
+        throw std::runtime_error(
+            "rubberband: markers[-1][0] (" + std::to_string(marker_frames) +
+            ") must equal the buffer's frame count (" +
+            std::to_string(frames) + ")");
     }
-    return {channels, frames};
+    if (marker_target < 1) {
+        throw std::runtime_error(
+            "rubberband: markers[-1][1] must be >= 1, got " +
+            std::to_string(marker_target));
+    }
+
+    // Behavior-preserving scope for this step: only the plain two-marker,
+    // no-pitch, no-formant, "high"-quality path runs the pipeline below.
+    // Steps 3/4 implement the rest; every other combination is a genuine
+    // unimplemented feature, not a bad call, so it raises invalid_argument
+    // rather than runtime_error.
+    if (k != 2) {
+        throw std::invalid_argument(
+            "rubberband: markers with more than two entries (warp) not "
+            "implemented yet");
+    }
+    if (pitch_scale != 1.0) {
+        throw std::invalid_argument(
+            "rubberband: pitch_scale != 1.0 not implemented yet");
+    }
+    if (preserve_formants) {
+        throw std::invalid_argument(
+            "rubberband: preserve_formants not implemented yet");
+    }
+    if (quality != "high") {
+        throw std::invalid_argument("rubberband: quality \"" + quality +
+                                     "\" not implemented yet");
+    }
+
+    return {channels, frames, static_cast<size_t>(marker_target)};
 }
 
 std::vector<const float *> channel_pointers(const InputBuffer &buffer,
@@ -263,47 +339,53 @@ std::vector<const float *> channel_pointers(const InputBuffer &buffer,
     return ptrs;
 }
 
-nb::ndarray<nb::numpy, float, nb::ndim<2>> stretch(InputBuffer buffer,
-                                                     int sample_rate,
-                                                     double duration_ratio,
-                                                     long long target_frames) {
-    auto [channels, frames] =
-        validate(buffer, sample_rate, duration_ratio, target_frames);
-    double time_ratio = static_cast<double>(target_frames) / static_cast<double>(frames);
+nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
+                                                    int sample_rate,
+                                                    MarkersBuffer markers,
+                                                    double pitch_scale,
+                                                    bool preserve_formants,
+                                                    std::string quality) {
+    RenderInputs in = validate_render(buffer, sample_rate, markers,
+                                       pitch_scale, preserve_formants,
+                                       quality);
+    double time_ratio = static_cast<double>(in.target_frames) /
+                         static_cast<double>(in.frames);
 
     OfflineResult result;
     {
         std::vector<const float *> in_ptrs =
-            channel_pointers(buffer, channels, frames);
+            channel_pointers(buffer, in.channels, in.frames);
         nb::gil_scoped_release release;
-        result = run_offline(in_ptrs, channels, frames,
+        result = run_offline(in_ptrs, in.channels, in.frames,
                               static_cast<size_t>(sample_rate), time_ratio);
     }
 
-    float *data = place_and_own(result.channels, channels, result.start_delay,
-                                 static_cast<size_t>(target_frames));
+    float *data = place_and_own(result.channels, in.channels,
+                                 result.start_delay, in.target_frames);
 
     nb::capsule owner(data, [](void *p) noexcept { delete[] static_cast<float *>(p); });
-    size_t shape[2] = {channels, static_cast<size_t>(target_frames)};
+    size_t shape[2] = {in.channels, in.target_frames};
     return nb::ndarray<nb::numpy, float, nb::ndim<2>>(data, 2, shape, owner);
 }
 
-/** Measurement-only variant sharing run_offline(): reports raw_frames
- * (before trim/pad), start_delay, preferred_start_pad, and the block size
- * used, instead of the trimmed/padded audio itself. */
+/** Measurement-only variant sharing run_offline() and validate_render():
+ * reports raw_frames (before trim/pad), start_delay, preferred_start_pad,
+ * and the block size used, instead of the trimmed/padded audio itself. */
 nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
-                              long long target_frames) {
-    // duration_ratio has no bearing on the diagnostics dict; pass a
-    // trivially valid value through the shared validator.
-    auto [channels, frames] = validate(buffer, sample_rate, 1.0, target_frames);
-    double time_ratio = static_cast<double>(target_frames) / static_cast<double>(frames);
+                              MarkersBuffer markers, double pitch_scale,
+                              bool preserve_formants, std::string quality) {
+    RenderInputs in = validate_render(buffer, sample_rate, markers,
+                                       pitch_scale, preserve_formants,
+                                       quality);
+    double time_ratio = static_cast<double>(in.target_frames) /
+                         static_cast<double>(in.frames);
 
     OfflineResult result;
     {
         std::vector<const float *> in_ptrs =
-            channel_pointers(buffer, channels, frames);
+            channel_pointers(buffer, in.channels, in.frames);
         nb::gil_scoped_release release;
-        result = run_offline(in_ptrs, channels, frames,
+        result = run_offline(in_ptrs, in.channels, in.frames,
                               static_cast<size_t>(sample_rate), time_ratio);
     }
 
@@ -342,15 +424,22 @@ nb::dict engine_info() {
 }  // namespace
 
 NB_MODULE(_rubberband, m) {
-    m.doc() = "Native Rubber Band binding: engine_info() and the stretch() native contract.";
+    m.doc() = "Native Rubber Band binding: engine_info() and the render() native contract v2.";
+    // Quality names Rubber Band can honor once steps 3/4 land; the single
+    // place that knows this engine's capability. The facade (step 2) uses
+    // it to raise UnsupportedOptionError; this step does not gate on it
+    // itself (validate_render() rejects every quality but "high" outright).
+    m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced", "fast");
     m.def("engine_info", &engine_info, "Report the compiled Rubber Band build configuration.");
-    m.def("stretch", &stretch, nb::arg("buffer"), nb::arg("sample_rate"),
-          nb::arg("duration_ratio"), nb::arg("target_frames"),
-          "Offline time-stretch buffer (channels, frames) float32 to "
-          "(channels, target_frames) float32.");
+    m.def("render", &render, nb::arg("buffer"), nb::arg("sample_rate"),
+          nb::arg("markers"), nb::arg("pitch_scale"),
+          nb::arg("preserve_formants"), nb::arg("quality"),
+          "Offline render buffer (channels, frames) float32 to "
+          "(channels, markers[-1][1]) float32 per native contract v2.");
     m.def("_stretch_diagnostics", &stretch_diagnostics, nb::arg("buffer"),
-          nb::arg("sample_rate"), nb::arg("target_frames"),
-          "Measurement-only: run the same pipeline as stretch() and report "
+          nb::arg("sample_rate"), nb::arg("markers"), nb::arg("pitch_scale"),
+          nb::arg("preserve_formants"), nb::arg("quality"),
+          "Measurement-only: run the same pipeline as render() and report "
           "raw_frames/start_delay/preferred_start_pad/block instead of "
           "trimmed audio.");
 }

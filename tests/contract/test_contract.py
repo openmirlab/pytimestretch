@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from conftest import (
     RaisingFakeStretch,
+    ValueErrorFakeStretch,
     WrongDtypeFakeStretch,
     WrongShapeFakeStretch,
     fake_stretch,
@@ -329,7 +330,7 @@ def test_backend_unavailable_wraps_import_error(
     # module would fail to import.
     from pytimestretch import _backends
 
-    def _raise() -> _backends.StretchFn:
+    def _raise() -> _backends.RenderFn:
         raise ImportError("no module named pytimestretch._nope")
 
     monkeypatch.setitem(_backends._REGISTRY, "unbuilt", _raise)
@@ -371,6 +372,28 @@ def test_fake_backend_engine_exception_wrapped(
         )
     assert excinfo.value.__cause__ is not None
     assert isinstance(excinfo.value.__cause__, RuntimeError)
+
+
+def test_fake_backend_value_error_wrapped_as_engine_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mirrors a real native module raising std::invalid_argument for an
+    # unimplemented native contract v2 option (arrives in Python as a plain
+    # ValueError): it must still be wrapped as EngineError, not leak as a
+    # bare ValueError, since ValueError is not itself a PytimestretchError.
+    from pytimestretch import _backends
+
+    monkeypatch.setitem(
+        _backends._REGISTRY, "value-error-fake", lambda: ValueErrorFakeStretch()
+    )
+    audio = np.zeros(10, dtype=np.float32)
+    with pytest.raises(EngineError) as excinfo:
+        pytimestretch.time_stretch(
+            audio, sample_rate=SAMPLE_RATE, duration_ratio=1.0,
+            backend="value-error-fake",
+        )
+    assert excinfo.value.__cause__ is not None
+    assert isinstance(excinfo.value.__cause__, ValueError)
 
 
 def test_fake_backend_wrong_shape_raises_engine_error(

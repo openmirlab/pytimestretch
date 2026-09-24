@@ -1,27 +1,39 @@
 /**
  * signalsmith_module.cpp — nanobind entry point for pytimestretch._signalsmith.
  *
- * ★ Implements the same native contract as native/rubberband_module.cpp:
- * `stretch(buffer, sample_rate, duration_ratio, target_frames) ->
- * float32[channels, target_frames]`, capsule-owned, GIL released during
- * engine work, `std::runtime_error` on anomalies. `run_signalsmith()` is the
- * one place that knows the Signalsmith Stretch pipeline (construct with a
- * fixed seed, `presetDefault()`, `.exact()` whole-buffer processing).
- * `.exact()` already produces exactly the requested output length by
- * itself, unlike Rubber Band's two-pass offline loop — except when the
- * input is shorter than its internal seek/pre-roll requirement, in which
- * case it zero-fills instead of stretching; `run_signalsmith()` zero-pads
- * the input up past that threshold (scaling the output length to match,
- * then trimming back to the caller's `target_frames`) so ordinary short
- * clips still get real output, not silence; any remaining `.exact()`
- * failure raises instead of returning its zero-fill.
- * `stretch()` and `_stretch_diagnostics()` are thin callers of it.
+ * ★ Implements the same native contract v2 as native/rubberband_module.cpp:
+ * `render(buffer, sample_rate, markers, pitch_scale, preserve_formants,
+ * quality) -> float32[channels, markers[-1][1]]`, capsule-owned, GIL
+ * released during engine work, `std::runtime_error` on anomalies, and
+ * `std::invalid_argument` (-> Python ValueError) for any
+ * marker/pitch/formant/quality combination this step does not implement
+ * yet (only the plain two-marker/no-pitch/no-formant/"high"-quality path
+ * runs the pipeline below; steps 3/4 fill in the rest).
+ * `run_signalsmith()` is the one place that knows the Signalsmith Stretch
+ * pipeline (construct with a fixed seed, `presetDefault()`, `.exact()`
+ * whole-buffer processing). `.exact()` already produces exactly the
+ * requested output length by itself, unlike Rubber Band's two-pass offline
+ * loop — except when the input is shorter than its internal seek/pre-roll
+ * requirement, in which case it zero-fills instead of stretching;
+ * `run_signalsmith()` zero-pads the input up past that threshold (scaling
+ * the output length to match, then trimming back to the caller's
+ * `target_frames`) so ordinary short clips still get real output, not
+ * silence; any remaining `.exact()` failure raises instead of returning
+ * its zero-fill. `render()` and `_stretch_diagnostics()` are thin callers
+ * of it, sharing `validate_render()` for the contract v2 input checks (frames
+ * from the buffer, target_frames from `markers[-1][1]`) so there is exactly
+ * one place that knows the Signalsmith pipeline and exactly one place that
+ * knows contract v2 validation. `SUPPORTED_QUALITY` names the quality
+ * presets Signalsmith can honor once complete ("high"/"balanced" — no
+ * "fast" equivalent per the plan); this step does not yet implement
+ * "balanced", so `render()` still rejects it.
  *
  * Reads: signalsmith-stretch/signalsmith-stretch.h (vendored, extern/signalsmith-stretch).
  */
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
+#include <nanobind/stl/string.h>
 
 // signalsmith-linear/fft.h calls std::memcpy without including <cstring>
 // itself (known upstream gap, not patched here — see CLAUDE.md's vendoring
@@ -31,6 +43,7 @@
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -58,14 +71,24 @@ namespace {
 // computation (that flag trades latency for spreading each block's work
 // across more process() calls — irrelevant to a single whole-buffer
 // .exact() call), no transpose/formant options (pitch stays unchanged,
-// out of scope per the plan). A fixed seed makes the phase-randomization
-// used internally for transient/peak handling deterministic across runs,
-// which the contract suite's determinism test requires; 0x5eed is an
-// arbitrary but memorable constant, not a tuned value.
+// out of scope for this step per the warp/pitch/quality plan's step 1). A
+// fixed seed makes the phase-randomization used internally for
+// transient/peak handling deterministic across runs, which the contract
+// suite's determinism test requires; 0x5eed is an arbitrary but memorable
+// constant, not a tuned value.
 constexpr long kSeed = 0x5eed;
 
 using InputBuffer =
     nb::ndarray<const float, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
+
+// Native contract v2's marker array: int64 (K, 2) rows of
+// (source_frame, output_frame), C-contiguous. The facade guarantees the
+// invariants (first row (0, 0), last row (frames, target), both columns
+// strictly increasing, K >= 2); this binding re-derives frames/target from
+// the last row and still checks frames against the buffer, rather than
+// trusting the facade blindly.
+using MarkersBuffer =
+    nb::ndarray<const int64_t, nb::shape<-1, 2>, nb::c_contig, nb::device::cpu>;
 
 /** Channel-indexable adapter over raw pointers, satisfying the `Inputs`/
  * `Outputs` template concept `.exact()` expects: `buffer[channel][index]`.
@@ -84,6 +107,13 @@ struct StretchDiagnostics {
     int block_samples = 0;
     int interval_samples = 0;
     size_t padded_frames = 0;
+};
+
+/** Contract v2 inputs, resolved and validated by validate_render(). */
+struct RenderInputs {
+    size_t channels;
+    size_t frames;
+    size_t target_frames;
 };
 
 /**
@@ -108,7 +138,7 @@ struct StretchDiagnostics {
  * (they predate `.exact()`); here it only engages below `.exact()`'s own
  * minimum, not on every call. Measured: even 1-frame and 10-frame inputs
  * complete with `exact_ok = true` after padding. If `.exact()` still
- * reports failure, `stretch()` raises rather than returning its zero-fill,
+ * reports failure, `render()` raises rather than returning its zero-fill,
  * so the binding never passes silence off as a stretch.
  *
  * `output_data` must already be sized `channels * target_frames`,
@@ -190,13 +220,21 @@ StretchDiagnostics run_signalsmith(const std::vector<const float *> &input,
     return diag;
 }
 
-/** Validate the shared inputs to stretch()/_stretch_diagnostics() and
- * return (channels, frames). Mirrors native/rubberband_module.cpp's
- * validate() (each native module owns its own contract validation; the
- * two bindings intentionally do not share a header for this). */
-std::pair<size_t, size_t> validate(const InputBuffer &buffer,
-                                    int sample_rate, double duration_ratio,
-                                    long long target_frames) {
+/**
+ * Validate the shared inputs to render()/_stretch_diagnostics() and return
+ * (channels, frames, target_frames). Mirrors
+ * native/rubberband_module.cpp's validate_render() (each native module
+ * owns its own copy of contract v2 validation; the two bindings
+ * intentionally do not share a header for this): derives frames from the
+ * buffer itself and target_frames from `markers[-1][1]`, checking
+ * `markers[-1][0]` against the buffer's own frame count, then enforces
+ * this step's behavior-preserving scope with `std::invalid_argument` for
+ * any option this step does not implement yet.
+ */
+RenderInputs validate_render(const InputBuffer &buffer, int sample_rate,
+                              const MarkersBuffer &markers, double pitch_scale,
+                              bool preserve_formants,
+                              const std::string &quality) {
     size_t channels = buffer.shape(0);
     size_t frames = buffer.shape(1);
     if (channels < 1 || frames < 1) {
@@ -209,18 +247,52 @@ std::pair<size_t, size_t> validate(const InputBuffer &buffer,
         throw std::runtime_error("signalsmith: sample_rate must be > 0, got " +
                                   std::to_string(sample_rate));
     }
-    if (!(duration_ratio > 0.0) || !std::isfinite(duration_ratio)) {
-        std::ostringstream msg;
-        msg << "signalsmith: duration_ratio must be finite and > 0, got "
-            << duration_ratio;
-        throw std::runtime_error(msg.str());
-    }
-    if (target_frames < 1) {
+
+    size_t k = markers.shape(0);
+    if (k < 2) {
         throw std::runtime_error(
-            "signalsmith: target_frames must be >= 1, got " +
-            std::to_string(target_frames));
+            "signalsmith: markers must have at least 2 rows, got " +
+            std::to_string(k));
     }
-    return {channels, frames};
+
+    int64_t marker_frames = markers(k - 1, 0);
+    int64_t marker_target = markers(k - 1, 1);
+    if (marker_frames < 0 || static_cast<size_t>(marker_frames) != frames) {
+        throw std::runtime_error(
+            "signalsmith: markers[-1][0] (" + std::to_string(marker_frames) +
+            ") must equal the buffer's frame count (" +
+            std::to_string(frames) + ")");
+    }
+    if (marker_target < 1) {
+        throw std::runtime_error(
+            "signalsmith: markers[-1][1] must be >= 1, got " +
+            std::to_string(marker_target));
+    }
+
+    // Behavior-preserving scope for this step: only the plain two-marker,
+    // no-pitch, no-formant, "high"-quality path runs the pipeline below.
+    // Steps 3/4 implement the rest; every other combination is a genuine
+    // unimplemented feature, not a bad call, so it raises invalid_argument
+    // rather than runtime_error.
+    if (k != 2) {
+        throw std::invalid_argument(
+            "signalsmith: markers with more than two entries (warp) not "
+            "implemented yet");
+    }
+    if (pitch_scale != 1.0) {
+        throw std::invalid_argument(
+            "signalsmith: pitch_scale != 1.0 not implemented yet");
+    }
+    if (preserve_formants) {
+        throw std::invalid_argument(
+            "signalsmith: preserve_formants not implemented yet");
+    }
+    if (quality != "high") {
+        throw std::invalid_argument("signalsmith: quality \"" + quality +
+                                     "\" not implemented yet");
+    }
+
+    return {channels, frames, static_cast<size_t>(marker_target)};
 }
 
 std::vector<const float *> channel_pointers(const InputBuffer &buffer,
@@ -232,60 +304,63 @@ std::vector<const float *> channel_pointers(const InputBuffer &buffer,
     return ptrs;
 }
 
-nb::ndarray<nb::numpy, float, nb::ndim<2>> stretch(InputBuffer buffer,
-                                                     int sample_rate,
-                                                     double duration_ratio,
-                                                     long long target_frames) {
-    auto [channels, frames] =
-        validate(buffer, sample_rate, duration_ratio, target_frames);
+nb::ndarray<nb::numpy, float, nb::ndim<2>> render(InputBuffer buffer,
+                                                    int sample_rate,
+                                                    MarkersBuffer markers,
+                                                    double pitch_scale,
+                                                    bool preserve_formants,
+                                                    std::string quality) {
+    RenderInputs in = validate_render(buffer, sample_rate, markers,
+                                       pitch_scale, preserve_formants,
+                                       quality);
 
-    float *data = new float[channels * static_cast<size_t>(target_frames)];
+    float *data = new float[in.channels * in.target_frames];
     {
         std::vector<const float *> in_ptrs =
-            channel_pointers(buffer, channels, frames);
+            channel_pointers(buffer, in.channels, in.frames);
         StretchDiagnostics diag;
         {
             nb::gil_scoped_release release;
-            diag = run_signalsmith(in_ptrs, channels, frames,
+            diag = run_signalsmith(in_ptrs, in.channels, in.frames,
                                    static_cast<size_t>(sample_rate),
-                                   static_cast<size_t>(target_frames), data);
+                                   in.target_frames, data);
         }
         if (!diag.exact_ok) {
             delete[] data;
             throw std::runtime_error(
                 "signalsmith: exact() could not process " +
-                std::to_string(frames) + " input frames into " +
-                std::to_string(target_frames) +
+                std::to_string(in.frames) + " input frames into " +
+                std::to_string(in.target_frames) +
                 " output frames (padded to " +
                 std::to_string(diag.padded_frames) + ")");
         }
     }
 
     nb::capsule owner(data, [](void *p) noexcept { delete[] static_cast<float *>(p); });
-    size_t shape[2] = {channels, static_cast<size_t>(target_frames)};
+    size_t shape[2] = {in.channels, in.target_frames};
     return nb::ndarray<nb::numpy, float, nb::ndim<2>>(data, 2, shape, owner);
 }
 
-/** Measurement-only variant sharing run_signalsmith(): reports whether
- * .exact() ran its full pipeline or hit the too-short-input zero-fill
- * path, plus the engine's input/output latency and block/interval sizes,
- * instead of the audio itself. */
+/** Measurement-only variant sharing run_signalsmith() and validate_render():
+ * reports whether .exact() ran its full pipeline or hit the
+ * too-short-input zero-fill path, plus the engine's input/output latency
+ * and block/interval sizes, instead of the audio itself. */
 nb::dict stretch_diagnostics(InputBuffer buffer, int sample_rate,
-                              long long target_frames) {
-    // duration_ratio has no bearing on the diagnostics dict; pass a
-    // trivially valid value through the shared validator.
-    auto [channels, frames] = validate(buffer, sample_rate, 1.0, target_frames);
+                              MarkersBuffer markers, double pitch_scale,
+                              bool preserve_formants, std::string quality) {
+    RenderInputs in = validate_render(buffer, sample_rate, markers,
+                                       pitch_scale, preserve_formants,
+                                       quality);
 
-    std::vector<float> scratch(channels * static_cast<size_t>(target_frames));
+    std::vector<float> scratch(in.channels * in.target_frames);
     StretchDiagnostics diag;
     {
         std::vector<const float *> in_ptrs =
-            channel_pointers(buffer, channels, frames);
+            channel_pointers(buffer, in.channels, in.frames);
         nb::gil_scoped_release release;
-        diag = run_signalsmith(in_ptrs, channels, frames,
+        diag = run_signalsmith(in_ptrs, in.channels, in.frames,
                                 static_cast<size_t>(sample_rate),
-                                static_cast<size_t>(target_frames),
-                                scratch.data());
+                                in.target_frames, scratch.data());
     }
 
     nb::dict info;
@@ -312,7 +387,7 @@ nb::dict engine_info() {
 
     // .c_str(): nanobind's nb::dict assigns via its built-in const char*
     // caster; a bare std::string needs <nanobind/stl/string.h> for its
-    // caster, which this translation unit doesn't otherwise need.
+    // caster, which is now also included above for the `quality` argument.
     std::string version_str = version.str();
 
     nb::dict info;
@@ -329,15 +404,24 @@ nb::dict engine_info() {
 }  // namespace
 
 NB_MODULE(_signalsmith, m) {
-    m.doc() = "Native Signalsmith Stretch binding: engine_info() and the stretch() native contract.";
+    m.doc() = "Native Signalsmith Stretch binding: engine_info() and the render() native contract v2.";
+    // Quality names Signalsmith can honor once steps 3/4 land (no "fast"
+    // equivalent per the plan); the single place that knows this engine's
+    // capability. The facade (step 2) uses it to raise
+    // UnsupportedOptionError; this step does not gate on it itself
+    // (validate_render() rejects every quality but "high" outright).
+    m.attr("SUPPORTED_QUALITY") = nb::make_tuple("high", "balanced");
     m.def("engine_info", &engine_info, "Report the compiled Signalsmith Stretch build configuration.");
-    m.def("stretch", &stretch, nb::arg("buffer"), nb::arg("sample_rate"),
-          nb::arg("duration_ratio"), nb::arg("target_frames"),
-          "Whole-buffer time-stretch buffer (channels, frames) float32 to "
-          "(channels, target_frames) float32 via .exact().");
+    m.def("render", &render, nb::arg("buffer"), nb::arg("sample_rate"),
+          nb::arg("markers"), nb::arg("pitch_scale"),
+          nb::arg("preserve_formants"), nb::arg("quality"),
+          "Whole-buffer render buffer (channels, frames) float32 to "
+          "(channels, markers[-1][1]) float32 via .exact(), per native "
+          "contract v2.");
     m.def("_stretch_diagnostics", &stretch_diagnostics, nb::arg("buffer"),
-          nb::arg("sample_rate"), nb::arg("target_frames"),
-          "Measurement-only: run the same pipeline as stretch() and report "
+          nb::arg("sample_rate"), nb::arg("markers"), nb::arg("pitch_scale"),
+          nb::arg("preserve_formants"), nb::arg("quality"),
+          "Measurement-only: run the same pipeline as render() and report "
           "exact_ok/padded/padded_frames/input_latency/output_latency/"
           "block/interval instead of the audio itself.");
 }

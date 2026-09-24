@@ -5,7 +5,11 @@ backend), these assertions are Signalsmith-specific: numeric tolerances
 derived from the step 4 measurement run recorded in
 docs/blueprints/thoughts/2026-09-24-signalsmith-binding-measurements.md.
 Margins here are deliberately generous relative to the measured worst case
-so a small future build/config change doesn't flap the suite.
+so a small future build/config change doesn't flap the suite. Calls target
+native contract v2's ``render(buffer, sample_rate, markers, pitch_scale,
+preserve_formants, quality)`` with the plain two-marker case (``[[0, 0],
+[frames, target_frames]]``, ``pitch_scale=1.0``, ``preserve_formants=False``,
+``quality="high"``) this step implements.
 
 Reads: pytimestretch._signalsmith.
 """
@@ -24,6 +28,14 @@ def target_frames(frames: int, ratio: float) -> int:
     import math
 
     return math.floor(frames * ratio + 0.5)
+
+
+def two_markers(frames: int, tgt: int) -> np.ndarray:
+    return np.array([[0, 0], [frames, tgt]], dtype=np.int64)
+
+
+def render(buf: np.ndarray, sr: int, markers: np.ndarray) -> np.ndarray:
+    return ss.render(buf, sr, markers, 1.0, False, "high")
 
 
 def impulse_at(t_sec: float, total_sec: float = 4.0, sr: int = SR) -> np.ndarray:
@@ -50,7 +62,7 @@ def test_impulse_placement_within_tolerance(ratio: float, t_sec: float) -> None:
     tgt = target_frames(frames, ratio)
     buf = audio.reshape(1, -1).copy()
 
-    out = ss.stretch(buf, SR, ratio, tgt)
+    out = render(buf, SR, two_markers(frames, tgt))
 
     measured_idx = int(np.argmax(np.abs(out[0])))
     expected_idx = round(t_sec * SR * ratio)
@@ -82,7 +94,7 @@ def test_pitch_stays_within_one_percent(ratio: float) -> None:
     tgt = target_frames(frames, ratio)
     buf = audio.reshape(1, -1).copy()
 
-    out = ss.stretch(buf, SR, ratio, tgt)[0]
+    out = render(buf, SR, two_markers(frames, tgt))[0]
 
     out_dur = tgt / SR
     i0 = max(0, round((out_dur / 2 - 0.5) * SR))
@@ -98,7 +110,7 @@ def test_silence_in_stays_silent() -> None:
     tgt = target_frames(SR, ratio)
     buf = audio.reshape(1, -1).copy()
 
-    out = ss.stretch(buf, SR, ratio, tgt)
+    out = render(buf, SR, two_markers(SR, tgt))
 
     # Measured (step 4): bit-exact zero, not just below a threshold.
     assert np.abs(out).max() < 1e-6
@@ -116,7 +128,7 @@ def test_stereo_crosstalk_stays_below_measured_bound() -> None:
     buf = np.stack([left, right], axis=0).copy()
     tgt = target_frames(SR, ratio)
 
-    out = ss.stretch(buf, SR, ratio, tgt)
+    out = render(buf, SR, two_markers(SR, tgt))
 
     left_peak = float(np.abs(out[0]).max())
     left_peak_dbfs = 20 * np.log10(left_peak) if left_peak > 0 else float("-inf")
@@ -130,8 +142,9 @@ def test_determinism_same_input_twice_bitwise_equal() -> None:
     buf = audio.reshape(1, -1).copy()
     tgt = target_frames(SR, ratio)
 
-    out1 = ss.stretch(buf.copy(), SR, ratio, tgt)
-    out2 = ss.stretch(buf.copy(), SR, ratio, tgt)
+    markers = two_markers(SR, tgt)
+    out1 = render(buf.copy(), SR, markers)
+    out2 = render(buf.copy(), SR, markers)
 
     np.testing.assert_array_equal(out1, out2)
 
@@ -164,7 +177,7 @@ def test_single_frame_edge_case() -> None:
     buf = audio.reshape(1, -1).copy()
     tgt = target_frames(1, 3.0)
 
-    out = ss.stretch(buf, SR, 3.0, tgt)
+    out = render(buf, SR, two_markers(1, tgt))
 
     assert out.shape == (1, tgt)
     assert np.isfinite(out).all()
@@ -175,7 +188,7 @@ def test_ten_frame_edge_case() -> None:
     buf = audio.reshape(1, -1).copy()
     tgt = target_frames(10, 0.5)
 
-    out = ss.stretch(buf, SR, 0.5, tgt)
+    out = render(buf, SR, two_markers(10, tgt))
 
     assert out.shape == (1, tgt)
     assert np.isfinite(out).all()
@@ -187,7 +200,62 @@ def test_short_clip_below_minimum_still_finite_and_exact_length() -> None:
     buf = audio.reshape(1, -1).copy()
     tgt = target_frames(frames, 0.25)
 
-    out = ss.stretch(buf, SR, 0.25, tgt)
+    out = render(buf, SR, two_markers(frames, tgt))
 
     assert out.shape == (1, tgt)
     assert np.isfinite(out).all()
+
+
+def test_supported_quality_names_engine_capability() -> None:
+    # The capability the engine can honor once steps 3/4 land -- not yet
+    # what render() actually accepts (this step still only implements
+    # "high"; see test_unimplemented_option_raises_value_error below). No
+    # "fast" equivalent for Signalsmith per the plan.
+    assert ss.SUPPORTED_QUALITY == ("high", "balanced")
+
+
+@pytest.mark.parametrize(
+    ("markers", "pitch_scale", "preserve_formants", "quality"),
+    [
+        pytest.param(
+            np.array([[0, 0], [22050, 22050], [44100, 44100]], dtype=np.int64),
+            1.0,
+            False,
+            "high",
+            id="k3_markers",
+        ),
+        pytest.param(
+            np.array([[0, 0], [44100, 44100]], dtype=np.int64),
+            2.0,
+            False,
+            "high",
+            id="pitch_scale",
+        ),
+        pytest.param(
+            np.array([[0, 0], [44100, 44100]], dtype=np.int64),
+            1.0,
+            True,
+            "high",
+            id="preserve_formants",
+        ),
+        pytest.param(
+            np.array([[0, 0], [44100, 44100]], dtype=np.int64),
+            1.0,
+            False,
+            "balanced",
+            id="quality_balanced",
+        ),
+    ],
+)
+def test_unimplemented_option_raises_value_error(
+    markers: np.ndarray, pitch_scale: float, preserve_formants: bool, quality: str
+) -> None:
+    # Temporary truth for this step (native contract v2, behavior-
+    # preserving): K > 2 markers, pitch_scale != 1.0, preserve_formants, and
+    # any quality but "high" are all genuine unimplemented features here,
+    # not validation failures -- native std::invalid_argument arrives as
+    # ValueError. Steps 3/4 make some of these combinations succeed instead.
+    audio = np.zeros(44100, dtype=np.float32)
+    buf = audio.reshape(1, -1).copy()
+    with pytest.raises(ValueError, match="not implemented yet"):
+        ss.render(buf, SR, markers, pitch_scale, preserve_formants, quality)

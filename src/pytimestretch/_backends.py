@@ -1,11 +1,25 @@
 """Backend registry — the sole owner of backend names and module paths.
 
 Maps a public backend name (``"rubberband"``, ``"signalsmith"``) to a lazy
-loader for its native module's ``stretch`` callable. Each native module
-implements the shared native contract: ``stretch(buffer, sample_rate,
-duration_ratio, target_frames) -> np.ndarray`` over a float32,
-C-contiguous, ``(channels, frames)`` buffer, returning float32
-``(channels, target_frames)``. A failed import is reported as
+loader for its native module's ``render`` callable. Each native module
+implements the shared native contract v2: ``render(buffer, sample_rate,
+markers, pitch_scale, preserve_formants, quality) -> np.ndarray`` over a
+float32, C-contiguous, ``(channels, frames)`` buffer, returning float32
+``(channels, markers[-1][1])``. ``markers`` is an int64 ``(K, 2)`` array of
+``(source_frame, output_frame)`` rows — first row ``(0, 0)``, last row
+``(frames, target_frames)``, both columns strictly increasing, ``K >= 2``
+— which the facade builds and the native module re-derives ``frames``/
+``target_frames`` from (checking ``markers[-1][0]`` against the buffer's own
+frame count) rather than taking them as separate arguments. ``pitch_scale``
+is a linear frequency ratio (``1.0`` = unchanged), ``preserve_formants``
+keeps the spectral envelope when pitch-shifting, and ``quality`` selects an
+engine-specific speed/quality preset (``"high"``/``"balanced"``/``"fast"``,
+not every engine honors every name — see each native module's
+``SUPPORTED_QUALITY``). As of this native contract v2 step, every native
+module still only implements the plain two-marker, ``pitch_scale=1.0``,
+``preserve_formants=False``, ``quality="high"`` path; any other combination
+raises ``ValueError`` (native ``std::invalid_argument``) naming the
+unimplemented feature. A failed import is reported as
 ``BackendUnavailableError`` rather than leaking the raw ``ImportError``, so
 callers get a message naming the backend and how to fix it.
 
@@ -20,27 +34,27 @@ import numpy as np
 
 from .errors import BackendUnavailableError, UnknownBackendError
 
-StretchFn = Callable[[np.ndarray, int, float, int], np.ndarray]
+RenderFn = Callable[[np.ndarray, int, np.ndarray, float, bool, str], np.ndarray]
 
 
-def _load_rubberband() -> StretchFn:
-    # `from ... import stretch` so a native module that is built but lacks
-    # `stretch` raises ImportError (reported as BackendUnavailableError),
+def _load_rubberband() -> RenderFn:
+    # `from ... import render` so a native module that is built but lacks
+    # `render` raises ImportError (reported as BackendUnavailableError),
     # not AttributeError.
-    from pytimestretch._rubberband import stretch
+    from pytimestretch._rubberband import render
 
-    return stretch
+    return render
 
 
-def _load_signalsmith() -> StretchFn:
-    from pytimestretch._signalsmith import stretch
+def _load_signalsmith() -> RenderFn:
+    from pytimestretch._signalsmith import render
 
-    return stretch
+    return render
 
 
 # Plain module-level dict so tests can inject a fake backend via
 # monkeypatch.setitem(_backends._REGISTRY, "fake", lambda: fake_stretch).
-_REGISTRY: dict[str, Callable[[], StretchFn]] = {
+_REGISTRY: dict[str, Callable[[], RenderFn]] = {
     "rubberband": _load_rubberband,
     "signalsmith": _load_signalsmith,
 }
@@ -48,8 +62,8 @@ _REGISTRY: dict[str, Callable[[], StretchFn]] = {
 BACKEND_NAMES: tuple[str, ...] = tuple(_REGISTRY)
 
 
-def load_backend(name: object) -> StretchFn:
-    """Resolve a backend name to its native ``stretch`` callable.
+def load_backend(name: object) -> RenderFn:
+    """Resolve a backend name to its native ``render`` callable.
 
     Raises ``UnknownBackendError`` for a name not in the registry (including
     non-string names), and ``BackendUnavailableError`` if the registered
@@ -91,4 +105,4 @@ def available_backends() -> tuple[str, ...]:
     return tuple(names)
 
 
-__all__ = ["BACKEND_NAMES", "StretchFn", "available_backends", "load_backend"]
+__all__ = ["BACKEND_NAMES", "RenderFn", "available_backends", "load_backend"]
