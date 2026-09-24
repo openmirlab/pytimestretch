@@ -1,12 +1,14 @@
-"""Smoke checks for the truthful bootstrap surface."""
+"""Installed version consistency and a public audio-processing smoke check."""
+
+from importlib.metadata import version
 
 import numpy as np
 
 import pytimestretch
 
 
-def test_version_is_importable() -> None:
-    assert pytimestretch.__version__ == "0.0.0"
+def test_version_matches_installed_metadata() -> None:
+    assert pytimestretch.__version__ == version("pytimestretch")
 
 
 def test_time_stretch_smoke() -> None:
