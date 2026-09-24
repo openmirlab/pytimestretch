@@ -68,8 +68,9 @@ measurement.
 
 ## Licensing gate
 
-Current `LICENSE` is private/no-redistribution. The `NOTICE` separates our
-source from candidate wrappers and engines. Before making this public,
-shipping a wheel with backend code, or enabling publishing, settle the
-Rubber Band GPL/commercial linkage/distribution question and approve this
-package's own public license.
+The package is GPL-2.0-or-later because its wheels compile in Rubber Band;
+`NOTICE` lists every vendored component, its pinned revision, and license.
+Update `NOTICE` whenever a submodule revision or a statically linked
+dependency changes. Stay private and unpublished (keep the
+`Private :: Do Not Upload` classifier) until the OpenMIRLab constitution
+gains an audio-tool category permitting a compiled core.

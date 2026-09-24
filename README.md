@@ -68,15 +68,17 @@ records what this first setup does and does not implement.
 
 ## Licensing and distribution
 
-This repository stays private and unpublished while its own public license
-and backend distribution topology are undecided. The present `LICENSE` grants
-no redistribution rights. The package currently vendors no engine code or
-binaries. A future compiled binding may need a different distribution model
-for each engine; a close port of upstream code also needs licensing review.
-Rubber Band itself has GPL-2.0-or-later/commercial licensing;
-`pyrubberband` is ISC; Signalsmith Stretch and its candidate Python binding
-are MIT. Those are separate layers; see [NOTICE](NOTICE). Do not infer that
-an ISC Python wrapper makes a bundled Rubber Band engine ISC.
+pytimestretch is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)
+and [NOTICE](NOTICE)). Its wheels compile in Rubber Band (GPL-2.0-or-later
+or commercial), which makes the package as a whole GPL — the same choice
+Spotify's pedalboard made for the same reason. Signalsmith Stretch and
+Signalsmith Linear are MIT; nanobind's statically linked runtime is
+BSD-3-Clause. Open-source consumers such as Tactus can use it under the GPL;
+a closed-source product that distributes Rubber Band needs a commercial
+licence from Breakfast Quay.
+
+The repository stays private and unpublished until the OpenMIRLab
+constitution gains an audio-tool category that permits a compiled core.
 
 ## Verification
 

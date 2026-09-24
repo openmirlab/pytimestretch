@@ -1,8 +1,8 @@
 # pytimestretch agent entry point
 
-For backend implementation, read `CLAUDE.md` and then
-`docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md`.
-The package is an installable scaffold; its audio entry point is intentionally
-unimplemented. Keep README, CLAUDE.md, NOTICE, and tests aligned with any new
-working behavior. Keep this repository private until Paul approves a license
-and release topology.
+Read `CLAUDE.md`, then `README.md`. The package calls Rubber Band and
+Signalsmith Stretch C++ libraries directly through nanobind modules compiled
+from vendored submodules; `time_stretch` in `src/pytimestretch/stretch.py`
+owns the public contract. Keep README, CLAUDE.md, NOTICE, CHANGELOG, and
+tests aligned with any behavior change. The package is GPL-2.0-or-later and
+the repository stays private and unpublished until Paul approves release.
