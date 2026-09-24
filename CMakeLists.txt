@@ -86,10 +86,9 @@ endif()
 
 install(TARGETS _rubberband LIBRARY DESTINATION pytimestretch)
 
-# Signalsmith Stretch + Signalsmith Linear: vendored and include-path
-# verified in this step only (native/signalsmith_module.cpp and its build
-# target land in a later step). Declared as an INTERFACE library so the
-# include paths are exercised by CMake configure without compiling anything.
+# Signalsmith Stretch + Signalsmith Linear: header-only, vendored as git
+# submodules. Declared as an INTERFACE library that owns their include
+# paths for the _signalsmith module below.
 add_library(signalsmith-stretch-headers INTERFACE)
 target_include_directories(
   signalsmith-stretch-headers
@@ -97,3 +96,64 @@ target_include_directories(
   extern/signalsmith-stretch/include
   extern/signalsmith-linear/include
 )
+
+# Pinned upstream revisions for both signalsmith submodules, recorded into
+# engine_info() the same way as Rubber Band's above. Falls back to the
+# plan's pinned commit/tag when .git is unavailable (sdist build).
+set(PYTIMESTRETCH_SS_REVISION "main@57b93f4")
+set(PYTIMESTRETCH_SS_LINEAR_REVISION "0.3.1")
+if(Git_FOUND)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/signalsmith-stretch/.git")
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/extern/signalsmith-stretch" rev-parse HEAD
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      OUTPUT_VARIABLE PYTIMESTRETCH_SS_REVISION_GIT
+      RESULT_VARIABLE PYTIMESTRETCH_SS_GIT_RESULT
+    )
+    if(PYTIMESTRETCH_SS_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_SS_REVISION_GIT)
+      set(PYTIMESTRETCH_SS_REVISION "${PYTIMESTRETCH_SS_REVISION_GIT}")
+    endif()
+  endif()
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/signalsmith-linear/.git")
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/extern/signalsmith-linear" rev-parse HEAD
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      OUTPUT_VARIABLE PYTIMESTRETCH_SS_LINEAR_REVISION_GIT
+      RESULT_VARIABLE PYTIMESTRETCH_SS_LINEAR_GIT_RESULT
+    )
+    if(PYTIMESTRETCH_SS_LINEAR_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_SS_LINEAR_REVISION_GIT)
+      set(PYTIMESTRETCH_SS_LINEAR_REVISION "${PYTIMESTRETCH_SS_LINEAR_REVISION_GIT}")
+    endif()
+  endif()
+endif()
+
+nanobind_add_module(
+  _signalsmith
+  NB_STATIC
+  native/signalsmith_module.cpp
+)
+
+target_link_libraries(_signalsmith PRIVATE signalsmith-stretch-headers)
+
+target_compile_definitions(
+  _signalsmith
+  PRIVATE
+  PYTIMESTRETCH_SS_SOURCE_REVISION="${PYTIMESTRETCH_SS_REVISION}"
+  PYTIMESTRETCH_SS_LINEAR_REVISION="${PYTIMESTRETCH_SS_LINEAR_REVISION}"
+)
+
+# signalsmith-linear's own CMakeLists (extern/signalsmith-linear/CMakeLists.txt)
+# defaults SIGNALSMITH_USE_ACCELERATE to ON on Apple; we are not
+# add_subdirectory-ing that file (its target isn't used — see the
+# INTERFACE library above), so mirror that default explicitly here rather
+# than silently losing it. Linux/Windows keep signalsmith-linear's built-in
+# FFT (no flag needed).
+if(APPLE)
+  target_compile_definitions(_signalsmith PRIVATE SIGNALSMITH_USE_ACCELERATE ACCELERATE_NEW_LAPACK PYTIMESTRETCH_SS_FFT="accelerate")
+  find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
+  target_link_libraries(_signalsmith PRIVATE ${ACCELERATE_FRAMEWORK})
+else()
+  target_compile_definitions(_signalsmith PRIVATE PYTIMESTRETCH_SS_FFT="builtin")
+endif()
+
+install(TARGETS _signalsmith LIBRARY DESTINATION pytimestretch)

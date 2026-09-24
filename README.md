@@ -16,9 +16,10 @@ Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
-**Rubber Band works; Signalsmith Stretch is next.** `time_stretch` calls
-Rubber Band v4.0.0 (R3 engine, offline) compiled from vendored sources into
-the package — no system library needed:
+**Both engines work.** `time_stretch` calls Rubber Band v4.0.0 (R3 engine,
+offline; the default) or Signalsmith Stretch 1.3.2 (`backend="signalsmith"`),
+both compiled from vendored sources into the package — no system library
+needed:
 
 ```python
 import soundfile as sf
@@ -32,9 +33,9 @@ assert len(slower) == round(len(audio) * 1.5)
 `duration_ratio` is output length / input length (> 1 = longer/slower) —
 the opposite direction of pyrubberband/librosa `rate`. The output has the
 exact computed length and the input's dtype (engines compute in float32).
-`available_backends()` reports `("rubberband",)`; `backend="signalsmith"`
-raises `BackendUnavailableError` until step 4. Blind listening has not been
-done, so no audio-quality claim is made. Building from source needs CMake
+`available_backends()` reports `("rubberband", "signalsmith")`. Measured
+placement, pitch, precision, and speed are in `docs/blueprints/thoughts/`;
+blind listening has not been done, so no audio-quality claim is made. Building from source needs CMake
 ≥ 3.24 and a C++17 compiler. There is no PyPI release.
 
 ```bash

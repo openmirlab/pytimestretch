@@ -15,3 +15,5 @@
 - Built Rubber Band v4.0.0 from vendored sources into the package; offline R3
   stretching now works with exact output length, preserved dtype, and
   measured placement, pitch, crosstalk, and determinism.
+- Added the Signalsmith Stretch backend (1.3.2 + main@57b93f4) through
+  `.exact()`; the same contract suite passes on both engines.

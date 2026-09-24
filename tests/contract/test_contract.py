@@ -319,18 +319,28 @@ def test_unknown_backend_name_raises() -> None:
         )
 
 
-def test_signalsmith_unavailable_today() -> None:
-    # Step 3 lands rubberband's native module (see test_rubberband_unavailable_today's
-    # replacement, test_package.py::test_time_stretch_smoke); signalsmith is
-    # still unbuilt until step 4, so it must still raise BackendUnavailableError.
+def test_backend_unavailable_wraps_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 4 lands signalsmith's native module alongside rubberband, so
+    # both real backends are available today; this test instead covers the
+    # BackendUnavailableError path directly by injecting a registry loader
+    # that raises ImportError, the same way a genuinely unbuilt native
+    # module would fail to import.
+    from pytimestretch import _backends
+
+    def _raise() -> _backends.StretchFn:
+        raise ImportError("no module named pytimestretch._nope")
+
+    monkeypatch.setitem(_backends._REGISTRY, "unbuilt", _raise)
     audio = np.zeros(10, dtype=np.float32)
     with pytest.raises(BackendUnavailableError) as excinfo:
         pytimestretch.time_stretch(
             audio, sample_rate=SAMPLE_RATE, duration_ratio=1.0,
-            backend="signalsmith",
+            backend="unbuilt",
         )
     assert isinstance(excinfo.value, ImportError)
-    assert "signalsmith" in str(excinfo.value)
+    assert "unbuilt" in str(excinfo.value)
 
 
 def test_no_fallback_on_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -495,13 +505,13 @@ def test_wide_but_valid_channel_count_accepted(
 # --- available_backends ---------------------------------------------------
 
 
-def test_available_backends_returns_tuple_excluding_unbuilt_engines() -> None:
-    # Step 3 lands rubberband's native module; signalsmith stays unbuilt
-    # until step 4.
+def test_available_backends_returns_tuple_of_both_engines() -> None:
+    # Step 4 lands signalsmith's native module alongside rubberband (step
+    # 3); both are now built and importable in this environment.
     names = pytimestretch.available_backends()
     assert isinstance(names, tuple)
     assert "rubberband" in names
-    assert "signalsmith" not in names
+    assert "signalsmith" in names
 
 
 def test_available_backends_includes_injected_fake(

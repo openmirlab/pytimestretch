@@ -22,16 +22,19 @@
   No layer over `pyrubberband`/`python-stretch`; no engine re-implementation.
   See the [development thought](thoughts/2026-09-24-time-stretch-package-contract.md).
 
-## ✅ Shipped (local branch) — contract and Rubber Band binding
+## ✅ Shipped (local branch) — contract and both engine bindings
 
-- `time_stretch` contract suite, native build from vendored engines, and a
-  working Rubber Band v4.0.0 binding. See the
-  [measurements](thoughts/2026-09-24-rubberband-binding-measurements.md).
+- `time_stretch` contract suite, native build from vendored engines, and
+  working Rubber Band v4.0.0 and Signalsmith Stretch 1.3.2 bindings. See the
+  [Rubber Band](thoughts/2026-09-24-rubberband-binding-measurements.md) and
+  [Signalsmith](thoughts/2026-09-24-signalsmith-binding-measurements.md)
+  measurements.
 
-## ▶ Next — Signalsmith binding, then licensing/docs and Linux CI
+## ▶ Next — listening, licensing/docs, Linux CI
 
-- Bind Signalsmith Stretch so the same contract suite passes on both.
-  See the [binding-first engines plan](plans/2026-09-24-binding-first-engines.md).
+- Blind listening of both bindings; GPL-2.0-or-later LICENSE/NOTICE and docs
+  (plan step 5); Linux wheel CI (step 6). See the
+  [binding-first engines plan](plans/2026-09-24-binding-first-engines.md).
 
 ## ⇄ Parallel — Python research lane (non-blocking)
 

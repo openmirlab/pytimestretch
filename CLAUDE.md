@@ -14,9 +14,9 @@ to resolve, not an established exception.
   teaching errors for pyrubberband/librosa habits (`rate=`, channels-first
   arrays), exact output length, and dtype preservation. `_backends.py` owns
   backend names and the native `stretch(buffer, sample_rate, duration_ratio,
-  target_frames)` contract. `native/rubberband_module.cpp` implements it for Rubber Band (offline, R3,
-  `OptionChannelsApart`); Signalsmith is not built yet and raises
-  `BackendUnavailableError`. `tests/contract/` runs against every built engine
+  target_frames)` contract. `native/rubberband_module.cpp` (offline, R3, `OptionChannelsApart`) and
+  `native/signalsmith_module.cpp` (`.exact()`, fixed seed, short input
+  zero-padded past its seek threshold) implement it. `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
