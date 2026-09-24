@@ -13,9 +13,11 @@ to resolve, not an established exception.
 - The package only imports and raises a deliberate `NotImplementedError` for
   `stretch_audio`. Neither engine is operational here yet.
 - Authoring and musical decisions stay in callers. This package owns the
-  NumPy-facing processing contract. Whether its implementation should be a
-  direct C++ binding or a Python/NumPy/SciPy/Numba engine is open; run the
-  deciding probe in the development thought before locking the architecture.
+  NumPy-facing processing contract. Architecture is decided binding-first:
+  call the Rubber Band and Signalsmith Stretch C++ libraries directly. Do not
+  wrap `pyrubberband`/`python-stretch` (references only) and do not
+  re-implement engine algorithms. The Python/Numba stretcher is a
+  non-blocking research lane; never describe it as an engine replacement.
 - The source version lives only in `src/pytimestretch/__about__.py`.
 - `docs/blueprints/plan.md` is the status index; grounded plans and thoughts
   live in their sibling directories and are tracked in this repository.
@@ -24,14 +26,18 @@ to resolve, not an established exception.
 
 1. Pin the shared API with implementation-independent tests: duration ratio, audio
    shape, dtype, exact frame count, input immutability, and error behavior.
-2. Run the Python/Numba-versus-native-engine deciding probe on real material,
-   including blind listening and measured timing/alignment.
-3. Choose the smallest architecture supported by that evidence: direct
-   bindings, a Python engine, or a hybrid. Existing Python wrappers remain
-   useful references but are not assumed production dependencies.
-4. Implement the chosen path with real-audio fixtures, marker/alignment
-   checks, packaging tests, and listening evidence. Update README, this file,
-   NOTICE, and CHANGELOG with each user-visible capability.
+2. Build a minimal direct Rubber Band binding: in-memory buffers, parameter
+   mapping, output placement, and a working build/install/licensing route.
+   Never cite `pyrubberband` temporary-WAV results as binding precision or
+   speed.
+3. Bind Signalsmith Stretch behind the same facade; the same contract suite
+   must pass on both engines.
+4. Add real-audio fixtures, alignment checks, packaging tests, and listening
+   evidence. Update README, this file, NOTICE, and CHANGELOG with each
+   user-visible capability.
+
+The Python research lane (blind listening, voice/mixed material, creative
+control) runs in parallel and never gates these steps.
 
 The thought is the detailed work specification; do not treat its proposed
 interface as implemented behavior until tests and docs advance together.

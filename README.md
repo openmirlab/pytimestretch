@@ -1,16 +1,18 @@
 # pytimestretch
 
-**A Python home for time stretching, with the algorithm boundary still under test.**
+**NumPy-facing Python bindings to native time-stretch engines.**
 
-`pytimestretch` is a private OpenMIRLab package under development. The name
-deliberately says what the package is for. The current product hypothesis is
-a NumPy-facing Python binding to native time-stretch libraries, initially
-Rubber Band and Signalsmith Stretch—not a wrapper around existing Python
-wrappers. A competing hypothesis is that a focused Python/NumPy/SciPy/Numba
-implementation could meet our actual needs without those engines. That fork
-is not settled; the [development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md)
-defines the deciding experiment. Rubber Band remains Tactus's working
-baseline, not a proven universal winner.
+`pytimestretch` is a private OpenMIRLab package under development. The
+product direction is decided: a NumPy-facing Python extension that calls the
+Rubber Band and Signalsmith Stretch C++ libraries directly, in memory. It is
+not a wrapper around `pyrubberband` or `python-stretch` (those serve as
+behavior references and comparison baselines), and it does not re-implement
+either engine's algorithm. A small Python/NumPy/SciPy/Numba prototype passed
+basic correctness and speed checks in a [first probe](docs/blueprints/thoughts/2026-09-24-python-numba-vs-native-stretch-probe.md),
+but its sound quality has not been judged; it continues as a research lane
+for special creative control, not a replacement for either engine. See the
+[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md).
+Rubber Band remains Tactus's working baseline, not a proven universal winner.
 
 ## Current status
 
@@ -35,8 +37,10 @@ The repository is private; clone access requires OpenMIRLab permission.
   choice, and any creative parameter choices.
 - `pytimestretch` will own the NumPy-facing contract, input validation,
   exact output length/alignment policy, and clear errors.
-- A direct C++ binding is a candidate architecture. A measured
-  Python/NumPy/SciPy/Numba engine is also a candidate; neither is shipped.
+- Audio is processed by direct C++ bindings to Rubber Band first, then
+  Signalsmith Stretch, behind one shared contract. Neither binding exists
+  yet. A Python engine may later ship only as a specialist option backed by
+  its own listening evidence.
 - The package will not take over Tactus arrangement semantics, a DAW session,
   or a real-time playback engine.
 
