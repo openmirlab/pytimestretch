@@ -1,7 +1,8 @@
 """Rubber Band engine-specific measurements, pinned with margins.
 
-Unlike tests/contract/test_contract.py (engine-independent, runs on every
-backend), these assertions are Rubber Band-specific: numeric tolerances
+Unlike tests/contract/ (test_output_contract.py, test_markers.py, etc. --
+engine-independent, runs on every backend), these assertions are Rubber
+Band-specific: numeric tolerances
 derived from this file's own step 3 measurement run (disposable script,
 raw JSON kept in the session scratchpad; summarized in the step 3 report).
 Margins here are deliberately generous relative to the measured worst case

@@ -26,9 +26,12 @@ from .errors import InvalidAudioError
 # array (e.g. librosa's ``(channels, samples)``) rather than genuine audio.
 MAX_CHANNELS = 64
 
-# No minimum marker spacing is enforced yet -- steps 3/4 pin this from
-# measured engine placement tolerances and enforce it with an error naming
-# the constant. Until then, any strictly-increasing spacing is accepted.
+# No minimum marker spacing is enforced: measured placement accuracy
+# degrades per engine with no shared bound both can honor (Rubber Band
+# holds up to ~20 ms spacing, Signalsmith only above ~100 ms), so a single
+# engine-agnostic constant would either reject valid Rubber Band calls or
+# silently pass placement Signalsmith can't deliver. Any strictly-increasing
+# spacing is accepted; this placeholder is currently unused.
 MIN_MARKER_SPACING_FRAMES = 1
 
 # Keyword names from pyrubberband/librosa's ``time_stretch(y, sr, rate=...)``
@@ -61,8 +64,7 @@ FORMANTS_CHOICES = ("shift", "preserve")
 QUALITY_CHOICES = ("high", "balanced")
 
 _QUALITY_FAST_REMOVED_MESSAGE = (
-    '"fast" was removed; use "balanced" (~3x faster than "high" on Rubber '
-    'Band, ~1.7x on Signalsmith)'
+    '"fast" was removed; use "balanced" (faster than "high")'
 )
 
 

@@ -1,4 +1,5 @@
-"""Shared fixtures for the engine-independent contract suite.
+"""Shared fixtures and test data builders for the engine-independent
+contract suite (tests/contract/test_*.py).
 
 Provides a test-only fake backend implementing native contract v2
 (``render(buffer, sample_rate, markers, pitch_scale, preserve_formants,
@@ -9,20 +10,24 @@ the two-marker plain-stretch endpoint case), plus a ``backend`` fixture
 parameterized over every registered backend name plus the fake, so the same
 suite runs against real engines once they exist without any changes here.
 The fake ignores ``pitch_scale``/``preserve_formants``/``quality`` for its
-own output (steps 3/4 give the real engines opinions about them) but
-records every argument of its last call on the module-level ``last_call``
-object, so tests can assert exactly what the facade passed through.
+own output but records every argument of its last call on the module-level
+``last_call`` object, so tests can assert exactly what the facade passed
+through.
 
 ``register_fake_backend`` wraps a render callable (and a configurable
 ``SUPPORTED_QUALITY``, default all three presets) into the ``Backend``
 shape ``_backends.load_backend`` now returns, for tests that inject other
 fakes (raising, wrong-shape, wrong-dtype, limited-quality) into the
-registry.
+registry. ``SAMPLE_RATE``/``RATIOS``/``FRAME_COUNTS``, ``target_frames``,
+and the signal builders (``impulse``/``sine_440``/``silence``/``noise``)
+are the test-data helpers every split-out test module imports.
 
 Reads: pytimestretch._backends, pytimestretch.errors.
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pytest
@@ -30,6 +35,37 @@ import pytest
 from pytimestretch import _backends
 from pytimestretch._backends import Backend
 from pytimestretch.errors import BackendUnavailableError
+
+SAMPLE_RATE = 48_000
+RATIOS = [0.25, 0.5, 0.999, 1.0, 1.5, 3.0]
+FRAME_COUNTS = [1001, 4410]
+
+
+def target_frames(frames: int, ratio: float) -> int:
+    return math.floor(frames * ratio + 0.5)
+
+
+# --- Signal builders -------------------------------------------------------
+
+
+def impulse(frames: int) -> np.ndarray:
+    sig = np.zeros(frames, dtype=np.float64)
+    sig[0] = 1.0
+    return sig
+
+
+def sine_440(frames: int, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+    t = np.arange(frames, dtype=np.float64) / sample_rate
+    return np.sin(2 * np.pi * 440.0 * t)
+
+
+def silence(frames: int) -> np.ndarray:
+    return np.zeros(frames, dtype=np.float64)
+
+
+def noise(frames: int, seed: int = 0) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return rng.standard_normal(frames)
 
 
 class _LastCall:

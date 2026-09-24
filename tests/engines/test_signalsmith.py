@@ -1,7 +1,8 @@
 """Signalsmith Stretch engine-specific measurements, pinned with margins.
 
-Unlike tests/contract/test_contract.py (engine-independent, runs on every
-backend), these assertions are Signalsmith-specific: numeric tolerances
+Unlike tests/contract/ (test_output_contract.py, test_markers.py, etc. --
+engine-independent, runs on every backend), these assertions are
+Signalsmith-specific: numeric tolerances
 derived from this step's own disposable measurement script (run against
 this build; see the step 4 report for the full side-by-side tables against
 Rubber Band). Margins here are deliberately generous relative to the measured worst case
