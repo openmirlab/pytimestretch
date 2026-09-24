@@ -11,7 +11,8 @@ audio-tool category remains a separate policy follow-up.
 ## State and ownership
 
 - Public GitHub source approved by Paul on 2026-09-24 after the Tactus trial.
-  No PyPI publishing or versioned release is approved. Keep the
+  The first source tag, `v0.1.0`, is approved after verification.
+  No PyPI publishing is approved. Keep the
   `Private :: Do Not Upload` classifier as the package-upload guard.
 - `stretch.py` holds the public functions `time_stretch`, `pitch_shift`,
   and `time_warp`, which all build a marker array and share one private

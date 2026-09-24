@@ -16,8 +16,8 @@ Both engines are compiled into the package and called directly in memory.
 Processing needs no system Rubber Band installation, command-line subprocess,
 intermediate WAV file, or runtime dependency on another Python wrapper.
 
-This is an early-stage package. The source is available on GitHub; **there is
-no PyPI release yet**. The API may change before the first release.
+This is an early-stage package. **v0.1.0 is the first source tag; there is
+no PyPI release yet**. The API may change during the 0.x series.
 
 ## Acknowledgments
 
@@ -59,7 +59,7 @@ The native build uses CMake 3.24 or newer and scikit-build-core. Build in an
 activated Python environment:
 
 ```bash
-git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
+git clone --branch v0.1.0 --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
 python -m pip install .
 ```

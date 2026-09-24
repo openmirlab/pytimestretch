@@ -77,8 +77,24 @@
 
 - Paul listened to all trial candidates and found them acceptable, then
   explicitly authorized merge/push and public GitHub visibility. This
-  supersedes the earlier private-source gate. PyPI publication and versioned
-  releases remain separately gated; keep `Private :: Do Not Upload`.
+  supersedes the earlier private-source gate. PyPI publication remains
+  separately gated; keep `Private :: Do Not Upload`.
+
+## ✅ Decided — first source tag v0.1.0
+
+- Paul authorized testing and, if successful, creating and pushing the first
+  source tag. Package metadata and changelog use `0.1.0`; no DSP behavior
+  changes. The tag must point to the verified revision merged into `main`.
+- Verification covers the default suite, explicit performance tests, Ruff,
+  sdist-to-wheel build, installed-wheel tests, and cross-platform wheel CI.
+  PyPI publishing and a GitHub Release with uploaded assets are separate.
+- Local evidence: 317 default tests and 2 explicit performance tests pass;
+  the sdist-built wheel passes 317 tests in a fresh venv, version/metadata
+  and package-content checks, and the README quick start. A/B against the
+  installed `0.0.0` baseline yields bit-identical arrays for all three public
+  operations on both engines and both quality presets (12 outputs).
+  The public skills map still routes correctly to this README; no map edit
+  is needed for the source-version change.
 
 ## ▶ Next — Tactus production adoption
 
@@ -97,5 +113,5 @@
 - Generalize the approved audio-tool scope in the OpenMIRLab constitution
   (`openmirlab-dev`) with a category permitting compiled cores. Paul's
   explicit public-source approval governs this package in the meantime.
-- Versioned distribution and PyPI publishing require a separate release
+- PyPI publishing and release assets require a separate distribution
   decision and fresh packaging/platform evidence.
