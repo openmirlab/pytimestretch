@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pytimestretch"
+dynamic = ["version"]
+description = "An experimental Python home for time stretching"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "LicenseRef-Private"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = ["Private :: Do Not Upload"]
+maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/openmirlab/pytimestretch"
+
+[tool.hatch.version]
+path = "src/pytimestretch/__about__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pytimestretch"]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.9", "build>=1.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"

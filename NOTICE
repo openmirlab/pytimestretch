@@ -1,0 +1,17 @@
+pytimestretch is an independently authored package scaffold. It currently
+contains no Rubber Band, Signalsmith Stretch, pyrubberband, or python-stretch
+source or binaries, and it does not yet process audio.
+
+Planned external integrations have separate licenses:
+
+- Rubber Band Library (Breakfast Quay): GPL-2.0-or-later or commercial terms.
+  https://breakfastquay.com/rubberband/license.html
+- pyrubberband (Brian McFee): ISC.
+  https://github.com/bmcfee/pyrubberband/blob/main/LICENSE
+- Signalsmith Stretch (Signalsmith Audio): MIT.
+  https://github.com/Signalsmith-Audio/signalsmith-stretch/blob/main/LICENSE.txt
+- python-stretch (Gregorio Giudici): MIT.
+  https://github.com/gregogiudici/python-stretch/blob/main/LICENSE
+
+These notices describe candidates, not dependencies shipped by this version.
+Review the actual linkage and distribution topology before a public release.
