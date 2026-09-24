@@ -4,12 +4,15 @@ Read [README.md](README.md) for the current user-facing contract and
 [the development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md)
 before implementing a backend. OpenMIRLab's current constitution lives in the
 adjacent `openmirlab-dev/plugins/openmirlab/CLAUDE.md`. This audio-tool package
-is outside its usual inference-only template; treat that as a policy decision
-to resolve, not an established exception.
+is outside its usual inference-only template. Its compiled audio-tool scope
+and public GitHub source are explicitly approved by Paul; a general org
+audio-tool category remains a separate policy follow-up.
 
 ## State and ownership
 
-- Private GitHub repository; no PyPI publishing or public release approved.
+- Public GitHub source approved by Paul on 2026-09-24 after the Tactus trial.
+  No PyPI publishing or versioned release is approved. Keep the
+  `Private :: Do Not Upload` classifier as the package-upload guard.
 - `stretch.py` holds the public functions `time_stretch`, `pitch_shift`,
   and `time_warp`, which all build a marker array and share one private
   render path (buffer copy, dispatch, result checks, dtype restore).
@@ -64,6 +67,11 @@ uv run ruff check .
 uv build
 ```
 
+The default suite excludes two `performance`-marked, host-dependent speed
+comparisons. Run `uv run pytest -q -m performance` explicitly on a controlled
+host. Audio correctness and quality-preset behavior remain in the default
+suite; a shared runner's timing ratio is not a portable correctness contract.
+
 The engines are git submodules under `extern/` (Rubber Band v4.0.0,
 Signalsmith Stretch 1.3.2 + main@57b93f4, Signalsmith Linear 0.3.1),
 compiled by scikit-build-core/CMake into `pytimestretch._<engine>` modules;
@@ -73,11 +81,18 @@ the contract suite runs against every compiled engine plus a test-only fake.
 Report engine revisions and build defines (`engine_info()`) with any
 measurement.
 
+Linux wheel CI runs on pull requests and `main` pushes. The separate
+`wheels-all-platforms.yml` workflow builds macOS arm64/x86_64 and Windows
+AMD64 wheels only for PRs labeled `all-platforms` or manual dispatches.
+All three platforms test installed CPython 3.10–3.13 wheels and log
+`engine_info()`; wheels are Actions artifacts and no workflow publishes a
+package release.
+
 ## Licensing gate
 
 The package is GPL-2.0-or-later because its wheels compile in Rubber Band;
 `NOTICE` lists every vendored component, its pinned revision, and license.
 Update `NOTICE` whenever a submodule revision or a statically linked
-dependency changes. Stay private and unpublished (keep the
-`Private :: Do Not Upload` classifier) until the OpenMIRLab constitution
-gains an audio-tool category permitting a compiled core.
+dependency changes. Paul's 2026-09-24 public-source approval supersedes the
+earlier private-repository gate. Keep the `Private :: Do Not Upload`
+classifier until PyPI publication is separately approved.

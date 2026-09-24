@@ -1,108 +1,256 @@
 # pytimestretch
 
-**NumPy-facing Python bindings to native time-stretch engines.**
+**Time stretching, pitch shifting, and marker-based time warping for NumPy audio.**
 
-`pytimestretch` is a private OpenMIRLab package under development. The
-product direction is decided: a NumPy-facing Python extension that calls the
-Rubber Band and Signalsmith Stretch C++ libraries directly, in memory. It is
-not a wrapper around `pyrubberband` or `python-stretch` (those serve as
-behavior references and comparison baselines), and it does not re-implement
-either engine's algorithm. A small Python/NumPy/SciPy/Numba prototype passed
-basic correctness and speed checks in a [first probe](docs/blueprints/thoughts/2026-09-24-python-numba-vs-native-stretch-probe.md),
-but its sound quality has not been judged; it continues as a research lane
-for special creative control, not a replacement for either engine. See the
-[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md).
-Rubber Band remains Tactus's working baseline, not a proven universal winner.
+[![Wheels](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml/badge.svg)](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml)
+[![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
 
-## Current status
+## Why this exists
 
-**Both engines work.** Three functions call Rubber Band v4.0.0 (the default)
-or Signalsmith Stretch 1.3.2 (`backend="signalsmith"`), both compiled from
-vendored sources into the package — no system library needed:
+Rubber Band and Signalsmith Stretch provide capable native audio-processing
+engines. pytimestretch gives them one small Python interface: pass a NumPy
+array, choose a duration, pitch, or timing map, and receive an array with a
+predictable shape, dtype, and frame count.
 
-```python
-import numpy as np
-import soundfile as sf
-import pytimestretch as pts
+Both engines are compiled into the package and called directly in memory.
+Processing needs no system Rubber Band installation, command-line subprocess,
+intermediate WAV file, or runtime dependency on another Python wrapper.
 
-audio, sr = sf.read("loop.wav", dtype="float32")        # (frames, channels)
+This is an early-stage package. The source is available on GitHub; **there is
+no PyPI release yet**. The API may change before the first release.
 
-# Change duration, keep pitch. duration_ratio = output length / input length.
-slower = pts.time_stretch(audio, sr, duration_ratio=1.5)
-assert len(slower) == round(len(audio) * 1.5)
+## Acknowledgments
 
-# Change pitch, keep duration. For voices, preserve formants.
-vocal_up = pts.pitch_shift(audio, sr, semitones=3, formants="preserve")
+The audio algorithms are the work of the upstream engine authors:
 
-# Warp: move source frames to output frames (e.g. a hit at 0.52 s onto beat 2
-# at 120 BPM). Integer (source, output) pairs from (0, 0) to (len, output_len);
-# with backend="signalsmith", keep markers >= 100 ms apart for tight timing.
-hit, beat2 = int(round(0.52 * sr)), int(round(0.5 * sr))
-warped = pts.time_warp(audio, sr, markers=[(0, 0), (hit, beat2), (len(audio), len(audio))])
-```
+- **Chris Cannam / Breakfast Quay** — [Rubber Band Library](https://github.com/breakfastquay/rubberband),
+  used here at v4.0.0 with its offline R3 engine.
+- **Geraint Luff / Signalsmith Audio** — [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch)
+  and [Signalsmith Linear](https://github.com/Signalsmith-Audio/linear), the
+  time/pitch processor and its FFT support.
+- **Wenzel Jakob and contributors** — [nanobind](https://github.com/wjakob/nanobind),
+  which connects the C++ engines to Python and NumPy.
 
-- `duration_ratio` runs the opposite way to pyrubberband/librosa `rate`
-  (`rate=2.0` there is `duration_ratio=0.5` here); passing `rate=`,
-  `n_steps=`, `time_map=`, or `rbargs=` raises an error that shows the
-  equivalent. `time_stretch` and `time_warp` also take `semitones=`.
-- `formants="shift"` (default) lets the spectral envelope move with the
-  pitch; use `"preserve"` for voices — it was clearly preferred on a vocal
-  in blind listening.
-- `quality="high"` (default) or `"balanced"`: about 3× faster on Rubber
-  Band and 1.7× on Signalsmith; no audible difference was heard on a
-  full-mix tempo change.
-- Output length is exact, dtype matches the input (engines compute in
-  float32), and the input is never modified.
+[pyrubberband](https://github.com/bmcfee/pyrubberband) and
+[python-stretch](https://github.com/gregogiudici/python-stretch) informed the
+API comparison and early experiments; they are not runtime dependencies.
+See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 
-In two rounds of blind listening (one listener, short loops) Rubber Band was
-preferred wherever a difference was heard; Signalsmith was close on a bass
-pitch shift. Measurements and listening notes are in
-`docs/blueprints/thoughts/`. Building from source needs CMake ≥ 3.24 and a
-C++17 compiler. There is no PyPI release.
+## Features
+
+- `time_stretch`: change duration while keeping pitch, or shift both together.
+- `pitch_shift`: transpose audio without changing its duration.
+- `time_warp`: map source frame positions to output frame positions.
+- Two interchangeable backends: `"rubberband"` (default) and `"signalsmith"`.
+- Formant preservation and `"high"` / `"balanced"` quality presets.
+- Mono or multichannel, frame-major NumPy arrays; exact output frame counts,
+  preserved input dtype, and no input mutation.
+
+These are offline, whole-buffer operations. File I/O, resampling, loudness
+normalization, beat detection, musical decisions, and real-time playback
+belong to the caller.
+
+## Install
+
+### From source
+
+Use Python 3.10 or newer, Git, and a C++17 toolchain (GCC, Clang, or MSVC).
+The native build uses CMake 3.24 or newer and scikit-build-core. Build in an
+activated Python environment:
 
 ```bash
 git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
+python -m pip install .
+```
+
+If you already cloned without submodules, run
+`git submodule update --init --recursive` before installing. The engines are
+compiled from these vendored sources; a system `librubberband` is not used.
+
+### Built wheels
+
+The [GitHub Actions runs](https://github.com/openmirlab/pytimestretch/actions)
+provide wheel artifacts. Download and unzip the artifact for your platform,
+then install the wheel matching your Python version and architecture:
+
+```bash
+python -m pip install "/path/to/the-matching-wheel.whl"
+```
+
+CI currently builds and tests **CPython 3.10–3.13** on:
+
+| Platform | Architectures | Artifact |
+| --- | --- | --- |
+| Linux (`manylinux_2_28`) | x86_64 | `wheels-linux` |
+| macOS | arm64, x86_64 | `wheels-macos` |
+| Windows | AMD64 | `wheels-windows` |
+
+macOS/Windows builds are opt-in, so those artifacts are available only on
+runs of **Wheels (all platforms)**. Actions artifacts are development builds,
+not versioned releases; downloading them through GitHub requires sign-in.
+
+## Quick start
+
+This example needs only pytimestretch and its NumPy dependency:
+
+```python
+import numpy as np
+import pytimestretch as pts
+
+sr = 44_100
+t = np.arange(sr, dtype=np.float64) / sr
+audio = (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+
+# Duration ratio = output length / input length: 1.5 is longer/slower.
+longer = pts.time_stretch(audio, sr, duration_ratio=1.5)
+assert longer.shape == (66_150,)
+assert longer.dtype == audio.dtype
+
+# Raise pitch by three semitones without changing duration.
+higher = pts.pitch_shift(audio, sr, semitones=3)
+assert higher.shape == audio.shape
+
+# Move the midpoint later while keeping the total duration.
+warped = pts.time_warp(
+    audio, sr, markers=[(0, 0), (sr // 2, sr * 3 // 5), (len(audio), len(audio))]
+)
+assert warped.shape == audio.shape
+
+# Choose the other engine explicitly; there is no silent fallback.
+alternative = pts.time_stretch(audio, sr, duration_ratio=1.5, backend="signalsmith")
+print(pts.available_backends())  # ('rubberband', 'signalsmith') in a full build
+```
+
+For files, install `soundfile` separately (`python -m pip install soundfile`):
+
+```python
+import soundfile as sf
+import pytimestretch as pts
+
+audio, sr = sf.read("input.wav", dtype="float32")  # (frames, channels)
+output = pts.time_stretch(audio, sr, duration_ratio=1.25)
+sf.write("output.wav", output, sr, subtype="FLOAT")
+```
+
+## Processing contract
+
+| Input or output | Rule |
+| --- | --- |
+| Audio | A nonempty, finite NumPy array with dtype `float32` or `float64`. |
+| Layout | `(frames,)` for mono or `(frames, channels)` for multichannel; 1–64 channels. Non-contiguous arrays are accepted. |
+| Sample rate | A positive integer in Hz; no implicit resampling. |
+| Duration ratio | A finite positive number; `2.0` doubles duration, `0.5` halves it. |
+| Stretch length | Exactly `floor(len(audio) * duration_ratio + 0.5)` frames; a result shorter than one frame is rejected. |
+| Pitch-shift length | Exactly `len(audio)` frames. |
+| Warp length | Exactly the last marker's output frame. |
+| Output | A new C-contiguous array with the same dtype, channel count, and dimensionality as the input. The input is never modified. |
+| Precision | Both engines calculate in `float32`, including when the input/output dtype is `float64`. |
+
+To fit a known frame count, use
+`duration_ratio=target_frames / len(audio)`. The rounding rule is half-up,
+not Python's ties-to-even `round()`.
+
+Processing does not normalize or clip the output. Check headroom before
+encoding to an integer PCM format. A ratio of `1.0` still passes through the
+engine; it is not a promise of sample-identical bypass.
+
+### Pitch, formants, and quality
+
+All three functions accept `backend`, `quality`, and `formants`.
+`time_stretch` and `time_warp` also accept an optional `semitones=0.0`;
+`pitch_shift` requires `semitones`.
+
+```python
+# Slow down and transpose together.
+result = pts.time_stretch(audio, sr, duration_ratio=1.2, semitones=-2)
+
+# Keep the spectral envelope in place when transposing a voice.
+result = pts.pitch_shift(audio, sr, semitones=3, formants="preserve")
+
+# Use the engine's lower-cost preset.
+result = pts.time_stretch(audio, sr, duration_ratio=1.2, quality="balanced")
+```
+
+- `formants="shift"` (default) lets the spectral envelope move with pitch;
+  `"preserve"` asks the engine to retain it. Results depend on the material.
+- `quality="high"` is the default; `"balanced"` reduces processing work.
+  The speed difference depends on the engine, platform, and audio. It is
+  not a guaranteed speedup ratio or a promise of equal sound quality.
+
+### Warp markers
+
+Markers are integer `(source_frame, output_frame)` pairs. Supply at least
+two pairs, starting at `(0, 0)` and ending at `(len(audio), output_frames)`.
+Both columns must strictly increase; seconds and floating-point frame
+values are rejected.
+
+The final frame count is exact. **Transient placement is approximate**:
+markers guide the engine rather than guarantee sample-exact alignment of
+an audible attack. For Signalsmith, markers at least 100 ms apart are a
+useful starting point from the measured cases. Dense markers and abrupt
+changes in local stretch ratio can smear or lose transients with either
+engine. Listen to the result for your material.
+
+### Coming from librosa or pyrubberband
+
+| Existing convention | pytimestretch equivalent |
+| --- | --- |
+| `rate=2.0` (twice as fast) | `duration_ratio=0.5` |
+| `n_steps=3` | `semitones=3` |
+| `time_map=[...]` | `markers=[...]`, with the endpoint rules above |
+| librosa `(channels, samples)` | Pass `audio.T`, then transpose the result back if needed. |
+| `rbargs={...}` | No arbitrary engine-option passthrough; use the named public options. |
+
+Known foreign keywords raise an error showing the corresponding call.
+Invalid audio/options raise `InvalidAudioError`; backend selection/import
+failures raise `UnknownBackendError` or `BackendUnavailableError`. Unsupported
+backend options raise `UnsupportedOptionError`, and engine failures raise
+`EngineError`. These package errors derive from `PytimestretchError`;
+unrecognized Python keywords raise `TypeError`.
+
+## Development and verification
+
+```bash
 uv sync --group dev
 uv run pytest -q
+uv run ruff check .
 uv build
 ```
 
-The repository is private; clone access requires OpenMIRLab permission.
+The default suite checks the shared contract on both compiled engines and a
+test-only fake, plus engine-specific pitch, placement, silence, channel
+independence, and determinism. CI tests installed wheels across the matrix
+above. `uv build` builds an sdist and then a wheel from that sdist.
 
-## Intended boundary
+Two host-dependent speed comparisons are excluded from the default suite.
+Run them explicitly on a controlled machine with
+`uv run pytest -q -m performance`; shared runners and CPU emulation do not
+provide a stable timing threshold.
 
-- The caller owns musical intent: source, target duration or timing, engine
-  choice, and any creative parameter choices.
-- `pytimestretch` owns the NumPy-facing contract, input validation,
-  exact output length and marker placement, and clear errors.
-- Audio is processed by direct C++ bindings to Rubber Band and Signalsmith
-  Stretch behind one shared contract. A Python engine may later ship only as
-  a specialist option backed by its own listening evidence.
-- The package will not take over Tactus arrangement semantics, a DAW session,
-  or a real-time playback engine.
+After changing native code, rebuild the installed package with
+`uv sync --reinstall-package pytimestretch`. Linux CI runs for pull requests
+and pushes to `main`; macOS/Windows CI runs for PRs labeled `all-platforms`
+or via manual dispatch.
 
-Design and evidence live in `docs/blueprints/`: the
-[development thought](docs/blueprints/thoughts/2026-09-24-time-stretch-package-contract.md),
-the [binding plan](docs/blueprints/plans/2026-09-24-binding-first-engines.md),
-and the [warp/pitch/quality plan](docs/blueprints/plans/2026-09-24-warp-pitch-quality.md).
+Engine measurements and bounded listening notes live in
+[docs/blueprints/thoughts](docs/blueprints/thoughts/). They are evidence for
+those sources, ratios, builds, and listeners, not a universal ranking of
+engines or a claim of audio-quality parity. Real-audio fixtures are not
+bundled with the package.
 
-## Licensing and distribution
+## License
 
-pytimestretch is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)
-and [NOTICE](NOTICE)). Its wheels compile in Rubber Band (GPL-2.0-or-later
-or commercial), which makes the package as a whole GPL — the same choice
-Spotify's pedalboard made for the same reason. Signalsmith Stretch and
-Signalsmith Linear are MIT; nanobind's statically linked runtime is
-BSD-3-Clause. Open-source consumers such as Tactus can use it under the GPL;
-a closed-source product that distributes Rubber Band needs a commercial
-licence from Breakfast Quay.
+**GPL-2.0-or-later.** Wheels include Rubber Band, which is GPL-2.0-or-later;
+Signalsmith Stretch and Signalsmith Linear are MIT, and nanobind's runtime
+is BSD-3-Clause. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-The repository stays private and unpublished until the OpenMIRLab
-constitution gains an audio-tool category that permits a compiled core.
+Rubber Band also offers [separate commercial licensing](https://breakfastquay.com/rubberband/license.html).
+This repository and its distributed package remain under the license above.
 
-## Verification
+## Support
 
-`uv run pytest -q` checks the current import/stub contract. `uv build`
-checks that the package can be built. Real-audio golden fixtures and both
-backend contract suites are future work; no audio-quality parity is claimed.
+Report reproducible problems in [GitHub Issues](https://github.com/openmirlab/pytimestretch/issues).
+Include the Python/OS/architecture, backend and quality, input shape/dtype,
+sample rate, and a small input that reproduces the problem. Prefer synthetic
+audio when the original recording cannot be shared.

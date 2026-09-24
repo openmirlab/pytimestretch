@@ -4,5 +4,6 @@ Read `CLAUDE.md`, then `README.md`. The package calls Rubber Band and
 Signalsmith Stretch C++ libraries directly through nanobind modules compiled
 from vendored submodules; `time_stretch` in `src/pytimestretch/stretch.py`
 owns the public contract. Keep README, CLAUDE.md, NOTICE, CHANGELOG, and
-tests aligned with any behavior change. The package is GPL-2.0-or-later and
-the repository stays private and unpublished until Paul approves release.
+tests aligned with any behavior change. The package is GPL-2.0-or-later.
+Paul approved public GitHub source on 2026-09-24; PyPI publication and
+versioned releases still require separate approval.

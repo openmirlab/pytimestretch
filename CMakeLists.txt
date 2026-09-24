@@ -13,6 +13,15 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+if(MSVC)
+  # /utf-8: source files here (and in the vendored Rubber Band/Signalsmith
+  # headers) are UTF-8; MSVC otherwise assumes the active code page.
+  # /bigobj: nanobind's binding translation units generate enough sections
+  # (template-heavy nb::class_/enum registrations) to exceed the default
+  # COFF object's 2^16 section limit.
+  add_compile_options(/utf-8 /bigobj)
+endif()
+
 find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
 
 execute_process(

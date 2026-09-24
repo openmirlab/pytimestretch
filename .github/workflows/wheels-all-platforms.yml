@@ -1,0 +1,52 @@
+# Opt-in macOS/Windows wheel CI, added alongside wheels.yml (Linux, always
+# on). These jobs run only when explicitly requested: add the
+# "all-platforms" label to a PR, or dispatch manually.
+# There is no push trigger and this
+# workflow never publishes anything.
+name: Wheels (all platforms)
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  wheels-macos:
+    name: Build macOS wheels
+    runs-on: macos-14
+    if: contains(github.event.pull_request.labels.*.name, 'all-platforms') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.2.1
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: wheels-macos
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  wheels-windows:
+    name: Build Windows wheels
+    runs-on: windows-latest
+    if: contains(github.event.pull_request.labels.*.name, 'all-platforms') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.2.1
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: wheels-windows
+          path: wheelhouse/*.whl
+          if-no-files-found: error

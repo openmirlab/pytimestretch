@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prepared public GitHub source with complete installation, API, migration,
+  verification, upstream-credit and licensing documentation. PyPI publication
+  and versioned releases remain unapproved.
+- Made two host-dependent speed comparisons opt-in with `pytest -m performance`;
+  the default suite retains all audio correctness tests. A macOS x86_64/Rosetta
+  run measured Signalsmith balanced/high at 1.21x, below the previous 1.3x
+  threshold despite both presets functioning correctly.
 - Established a private, installable package scaffold and an explicit
   unimplemented audio entry point.
 - Recorded the first backend-development contract and verification gates.
@@ -26,3 +33,7 @@
   components; the repository remains private and unpublished.
 - Added a Linux wheel CI workflow (manylinux x86_64, CPython 3.10–3.13) that
   tests every built wheel and never publishes.
+- Added opt-in macOS arm64/x86_64 and Windows AMD64 wheel CI for CPython
+  3.10–3.13, including per-wheel engine metadata. Fixed macOS deployment
+  targets for nanobind's C++17 allocation requirements and added MSVC
+  compilation options; artifacts remain private and unpublished.

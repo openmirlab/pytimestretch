@@ -5,11 +5,12 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "pytimestretch"
 dynamic = ["version"]
-description = "An experimental Python home for time stretching"
+description = "NumPy bindings for Rubber Band and Signalsmith time stretching and pitch shifting"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
+# The source repository is public; PyPI publication is not yet approved.
 classifiers = ["Private :: Do Not Upload"]
 maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
 dependencies = ["numpy>=1.24"]
@@ -50,18 +51,57 @@ dev = ["pytest>=8.0", "ruff>=0.9", "build>=1.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Shared CI runners (including Rosetta) cannot guarantee a speedup ratio.
+# Keep measured performance thresholds opt-in on a controlled host.
+addopts = "-m 'not performance'"
+markers = ["performance: host-dependent speed comparisons; opt in with -m performance"]
 
 [tool.ruff]
 target-version = "py310"
 
 [tool.cibuildwheel]
-# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md: Linux
-# only until CI adds macOS and Windows before public release (plan review,
-# 2026-09-24). CPython 3.10-3.13 per requires-python; manylinux x86_64 only
-# for now (skip musllinux, PyPy, and i686 -- no known need yet, and each
-# adds its own build/test cost on a private repo).
+# Step 6 of docs/blueprints/plans/2026-09-24-binding-first-engines.md: the
+# `wheels.yml` workflow (pull_request/push/workflow_dispatch, always runs)
+# only builds the Linux selector below -- manylinux x86_64, CPython
+# 3.10-3.13 per requires-python (skip musllinux, PyPy, and i686; no known
+# need yet, and each adds its own build/test cost on a private repo). The
+# macOS/Windows selectors in [tool.cibuildwheel.macos]/[.windows] below are
+# only exercised by the opt-in `wheels-all-platforms.yml` workflow (the
+# "all-platforms" PR label, or manual dispatch) -- they don't change what
+# wheels.yml builds.
 build = "cp3{10,11,12,13}-manylinux_x86_64"
 skip = ["*-musllinux*", "pp*", "*-manylinux_i686"]
 build-verbosity = 1
 test-requires = ["pytest"]
-test-command = "pytest {project}/tests -q"
+# The engine_info() print runs before pytest so each wheel's engine/FFT
+# choice (e.g. macOS vdsp/accelerate vs. Linux/Windows builtin) lands in
+# the CI log even on a fully green run, not just on failure.
+test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info()))\" && pytest {project}/tests -q"
+
+[tool.cibuildwheel.macos]
+# macOS runner is Apple Silicon (macos-14); build both arm64 and x86_64 as
+# separate wheels (not universal2 -- keeps each wheel's engine_info() FFT
+# choice traceable to one arch). cibuildwheel tests the x86_64 wheel under
+# Rosetta 2 automatically on an arm64 runner; arm64 tests run natively.
+build = "cp3{10,11,12,13}-macosx_*"
+archs = ["arm64", "x86_64"]
+
+# nanobind's own internals use C++17 aligned new/delete
+# (operator new(size, align_val_t)), which AppleClang only makes available
+# starting at macOS 10.13 -- the x86_64 CPython build's own default of
+# 10.9 (observed: `-mmacosx-version-min=10.9` in a CI build log) is too
+# low and fails with "aligned deallocation function ... is only available
+# on macOS 10.13 or newer". 11.0 for arm64 matches Apple Silicon's actual
+# floor (no arm64 Mac has ever shipped an OS below 11) and is comfortably
+# above the C++17/nanobind requirement too.
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_x86_64"
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.13" }
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_arm64"
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+
+[tool.cibuildwheel.windows]
+build = "cp3{10,11,12,13}-win_amd64"
+archs = ["AMD64"]
