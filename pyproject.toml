@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "pytimestretch"
 dynamic = ["version"]
-description = "NumPy bindings for Rubber Band, Signalsmith, and PaulStretch audio processing"
+description = "NumPy bindings for Rubber Band, Signalsmith, PaulStretch, and Bungee Basic"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-2.0-only"
@@ -19,6 +19,11 @@ license-files = [
     "extern/libpaulstretch/vendor/kissfft/COPYING_kiss_fft.txt",
     "extern/rubberband/src/ext/kissfft/COPYING",
     "extern/rubberband/src/ext/speex/COPYING",
+    "extern/bungee/LICENSE",
+    "extern/bungee/submodules/eigen/COPYING.MPL2",
+    "extern/bungee/submodules/eigen/COPYING.README",
+    "extern/bungee/submodules/eigen/COPYING.BSD",
+    "licenses/pffft-LICENSE",
 ]
 # The source repository is public; PyPI publication is not yet approved.
 classifiers = ["Private :: Do Not Upload"]
@@ -58,6 +63,21 @@ exclude = [
     "extern/libpaulstretch/scripts/**",
     "extern/libpaulstretch/tests/**",
     "extern/libpaulstretch/vendor/dr_libs/**",
+    "extern/bungee/cmd/**",
+    "extern/bungee/submodules/cxxopts/**",
+    "extern/bungee/submodules/eigen/bench/**",
+    "extern/bungee/submodules/eigen/blas/**",
+    "extern/bungee/submodules/eigen/ci/**",
+    "extern/bungee/submodules/eigen/cmake/**",
+    "extern/bungee/submodules/eigen/debug/**",
+    "extern/bungee/submodules/eigen/demos/**",
+    "extern/bungee/submodules/eigen/doc/**",
+    "extern/bungee/submodules/eigen/failtest/**",
+    "extern/bungee/submodules/eigen/lapack/**",
+    "extern/bungee/submodules/eigen/scripts/**",
+    "extern/bungee/submodules/eigen/test/**",
+    "extern/bungee/submodules/eigen/unsupported/**",
+    "extern/bungee/submodules/pffft/test_pffft.c",
     "extern/**/.git",
 ]
 
@@ -73,6 +93,7 @@ markers = ["performance: host-dependent speed comparisons; opt in with -m perfor
 
 [tool.ruff]
 target-version = "py310"
+extend-exclude = ["extern"]
 
 [tool.cibuildwheel]
 # The `wheels.yml` workflow (pull_request/push/workflow_dispatch, always runs)
@@ -90,7 +111,7 @@ test-requires = ["pytest"]
 # The engine_info() print runs before pytest so each wheel's engine/FFT
 # choice (e.g. macOS vdsp/accelerate vs. Linux/Windows builtin) lands in
 # the CI log even on a fully green run, not just on failure.
-test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss, pytimestretch._paulstretch as ps; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info())); print('engine_info paulstretch', json.dumps(ps.engine_info()))\" && pytest {project}/tests -q"
+test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss, pytimestretch._paulstretch as ps, pytimestretch._bungee as bg; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info())); print('engine_info paulstretch', json.dumps(ps.engine_info())); print('engine_info bungee', json.dumps(bg.engine_info()))\" && pytest {project}/tests -q"
 
 [tool.cibuildwheel.macos]
 # macOS runner is Apple Silicon (macos-14); build both arm64 and x86_64 as

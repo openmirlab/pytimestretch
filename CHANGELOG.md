@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `time_scrub` using direct Bungee Basic v2.4.30 bindings. Output-first
+  control points drive continuous forward, held, and reverse source motion;
+  global pitch is independent, and the result has an exact frame count.
+  Preserve the existing stretch/warp backend contract and document Basic's
+  dense-transient and stationary-grain limits.
+- Vendor pinned Bungee Basic, Eigen, and PFFFT sources, build them into the
+  native extension, and include MPL/UCAR attribution in source and wheels.
 - Add a separate `extreme_stretch` operation using direct libpaulstretch
   v0.3.0/KissFFT bindings. Preserve the requested factor and native
   approximate duration; accept mono/stereo clips of at least 81,920 frames.

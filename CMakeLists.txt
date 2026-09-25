@@ -207,3 +207,69 @@ target_compile_definitions(_paulstretch PRIVATE
   PYTIMESTRETCH_PAULSTRETCH_SOURCE_REVISION="${PYTIMESTRETCH_PAULSTRETCH_REVISION}"
 )
 install(TARGETS _paulstretch LIBRARY DESTINATION pytimestretch)
+
+# Bungee Basic v2.4.30 is a separate position-curve operation. Compile its
+# pinned sources directly: upstream's top-level CMake also builds the CLI,
+# asks for a newer CMake version, and would link a shared Bungee library.
+# The nested Eigen/PFFFT submodules are pinned by Bungee's gitlink commits.
+set(PYTIMESTRETCH_BUNGEE_REVISION "8cb6977d0c1a1b411ac320493b3c7f5182ed2d22")
+if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/bungee/.git")
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/extern/bungee" rev-parse HEAD
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE PYTIMESTRETCH_BUNGEE_REVISION_GIT
+    RESULT_VARIABLE PYTIMESTRETCH_BUNGEE_GIT_RESULT
+    ERROR_QUIET
+  )
+  if(PYTIMESTRETCH_BUNGEE_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_BUNGEE_REVISION_GIT)
+    set(PYTIMESTRETCH_BUNGEE_REVISION "${PYTIMESTRETCH_BUNGEE_REVISION_GIT}")
+  endif()
+endif()
+
+add_library(bungee-pffft STATIC
+  extern/bungee/submodules/pffft/pffft.c
+  extern/bungee/submodules/pffft/fftpack.c
+)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(bungee-pffft PRIVATE -ffast-math -fno-finite-math-only -fno-exceptions)
+endif()
+
+add_library(bungee-core STATIC
+  extern/bungee/src/Assert.cpp
+  extern/bungee/src/Fourier.cpp
+  extern/bungee/src/Grain.cpp
+  extern/bungee/src/Grains.cpp
+  extern/bungee/src/Input.cpp
+  extern/bungee/src/Instrumentation.cpp
+  extern/bungee/src/Output.cpp
+  extern/bungee/src/Partials.cpp
+  extern/bungee/src/Stretch.cpp
+  extern/bungee/src/Stretcher.cpp
+  extern/bungee/src/Synthesis.cpp
+  extern/bungee/src/Timing.cpp
+  extern/bungee/src/Window.cpp
+  extern/bungee/src/version.cpp
+)
+target_compile_features(bungee-core PUBLIC cxx_std_20)
+target_include_directories(bungee-core
+  PUBLIC extern/bungee
+  PRIVATE extern/bungee/submodules/eigen extern/bungee/submodules
+)
+target_compile_definitions(bungee-core PRIVATE
+  BUNGEE_VERSION="2.4.30"
+  BUNGEE_SELF_TEST=0
+  eigen_assert=BUNGEE_ASSERT1
+  EIGEN_DONT_PARALLELIZE=1
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(bungee-core PRIVATE -fwrapv)
+endif()
+target_link_libraries(bungee-core PRIVATE bungee-pffft)
+
+nanobind_add_module(_bungee NB_STATIC native/bungee_module.cpp)
+target_compile_features(_bungee PRIVATE cxx_std_20)
+target_link_libraries(_bungee PRIVATE bungee-core bungee-pffft)
+target_compile_definitions(_bungee PRIVATE
+  PYTIMESTRETCH_BUNGEE_SOURCE_REVISION="${PYTIMESTRETCH_BUNGEE_REVISION}"
+)
+install(TARGETS _bungee LIBRARY DESTINATION pytimestretch)
