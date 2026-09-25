@@ -32,9 +32,10 @@ audio-tool category remains a separate policy follow-up.
   libpaulstretch v0.3.0 through `_paulstretch`. It passes the requested
   ratio through unchanged and returns the native output length; it is not
   an interchangeable `_backends` entry. It requires at least 81,920 frames,
-  accepts mono/stereo and ratios >= 1, and randomizes spectral phase across
-  calls. A native mutex protects upstream's process-global non-atomic seed
-  counter from concurrent calls.
+  accepts mono/stereo and ratios >= 1e-5; ratios below 1 shorten audio with
+  especially approximate duration on short clips. It randomizes spectral
+  phase across calls. A native mutex protects upstream's process-global
+  non-atomic seed counter from concurrent calls.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
   call the Rubber Band, Signalsmith Stretch, and libpaulstretch C++ libraries

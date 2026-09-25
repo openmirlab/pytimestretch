@@ -21,6 +21,9 @@ __all__ = ["extreme_stretch"]
 
 _FFT_SIZE = 4096
 _MIN_INPUT_FRAMES = 20 * _FFT_SIZE
+# Upstream stores its per-step input skip in a signed int. Keep well clear of
+# overflow when a very small stretch factor asks it to skip many FFT chunks.
+_MIN_DURATION_RATIO = 1e-5
 
 
 def extreme_stretch(
@@ -42,7 +45,9 @@ def extreme_stretch(
     shape ``(frames,)`` or ``(frames, channels)`` and one or two channels.
     At least 81,920 frames are required: shorter clips are dominated by the
     engine's fixed startup window and can miss the requested ratio badly.
-    ``duration_ratio`` must be finite and at least 1.0. The result is a new,
+    ``duration_ratio`` must be finite and at least ``1e-5``. Values below
+    ``1`` shorten the audio, but the fixed FFT chunk and startup window make
+    the duration especially approximate for short clips. The result is a new,
     C-contiguous array matching the input's dtype and channel layout;
     calculation inside the engine uses ``float32``. Input is not changed.
     Output is not peak-normalized or clipped.
@@ -59,10 +64,14 @@ def extreme_stretch(
     if channels is not None and channels > 2:
         raise InvalidAudioError("extreme_stretch supports only mono or stereo audio")
     if isinstance(duration_ratio, bool) or not isinstance(duration_ratio, numbers.Real):
-        raise InvalidAudioError("duration_ratio must be a real number >= 1")
+        raise InvalidAudioError("duration_ratio must be a real number >= 1e-5")
     ratio = float(duration_ratio)
-    if not math.isfinite(ratio) or ratio < 1.0 or ratio > np.finfo(np.float32).max:
-        raise InvalidAudioError("duration_ratio must be finite and >= 1")
+    if (
+        not math.isfinite(ratio)
+        or ratio < _MIN_DURATION_RATIO
+        or ratio > np.finfo(np.float32).max
+    ):
+        raise InvalidAudioError("duration_ratio must be finite and >= 1e-5")
 
     buffer = np.array(
         audio.reshape(frames, -1).T, dtype=np.float32, copy=True, order="C"

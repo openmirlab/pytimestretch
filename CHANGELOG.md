@@ -6,6 +6,9 @@
   v0.3.0/KissFFT bindings. Preserve the requested factor and native
   approximate duration; accept mono/stereo clips of at least 81,920 frames.
   Spectral phase varies across repeated renders.
+- Allow `extreme_stretch` ratios below 1 for native PaulStretch compression;
+  `0.1` is accepted, with approximate output length. Guard extremely small
+  ratios against the upstream input-skip integer limit.
 - Convey the combined source distribution and wheels under GPL-2.0-only
   because libpaulstretch is GPLv2; retain original-code GPL-2.0-or-later
   notices and bundle upstream license files.

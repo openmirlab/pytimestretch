@@ -22,6 +22,21 @@ def test_original_ratio_keeps_upstream_approximate_length() -> None:
     assert np.max(np.abs(output)) > 0.01
 
 
+def test_subunit_ratio_can_shorten_audio() -> None:
+    audio = _tone(4 * 44_100)
+    output = pytimestretch.extreme_stretch(audio, 44_100, duration_ratio=0.1)
+    assert output.shape == (20_480,)  # 0.116x, rather than exact 0.1x
+    assert np.isfinite(output).all()
+    assert np.max(np.abs(output)) > 0.01
+
+
+def test_smallest_supported_ratio_stays_within_native_skip_limit() -> None:
+    audio = np.zeros(81_920, dtype=np.float32)
+    output = pytimestretch.extreme_stretch(audio, 44_100, duration_ratio=1e-5)
+    assert output.shape == (4096,)
+    assert np.isfinite(output).all()
+
+
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_stereo_dtype_layout_and_input_immutability(dtype: type) -> None:
     tone = _tone(81_920, dtype=dtype)
@@ -65,7 +80,7 @@ def test_rejects_too_short_audio(frames: int) -> None:
         )
 
 
-@pytest.mark.parametrize("ratio", [0, 0.5, -1, float("nan"), float("inf"), True, "8"])
+@pytest.mark.parametrize("ratio", [0, 1e-6, -1, float("nan"), float("inf"), True, "8"])
 def test_rejects_invalid_duration_ratio(ratio: object) -> None:
     with pytest.raises(InvalidAudioError, match="duration_ratio"):
         pytimestretch.extreme_stretch(

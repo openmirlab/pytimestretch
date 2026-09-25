@@ -184,6 +184,9 @@ sr = 44_100
 source = (0.2 * np.sin(2 * np.pi * 220 * np.arange(4 * sr) / sr)).astype(np.float32)
 texture = pts.extreme_stretch(source, sr, duration_ratio=8.0)
 print(texture.shape)  # (1_376_256,) with the pinned engine and FFT settings
+
+compressed = pts.extreme_stretch(source, sr, duration_ratio=0.1)
+print(compressed.shape)  # (20_480,) with the same engine settings
 ```
 
 The `duration_ratio` is the factor sent to the engine: `8.0` asks for an
@@ -194,14 +197,22 @@ produces about 31.21 seconds, not exactly 32. The binding does not adjust
 the requested factor, pad, or trim its result. Use `time_stretch` when a
 timeline requires an exact length.
 
+Ratios below `1.0` shorten audio: `0.1` asks for one tenth of the original
+duration. The same four-second source above returns 20,480 frames (about
+0.116 of its input), because the fixed startup window and complete FFT
+chunks matter more at short durations. This is still PaulStretch's native
+result, without length compensation.
+
 Input must have at least **81,920 frames** (20 FFT chunks), regardless of
-sample rate. This prevents very short clips from being dominated by the
+sample rate. This limits how much very short clips are dominated by the
 engine's fixed startup window. `duration_ratio` must be finite and at least
-1.0. Only mono `(frames,)` / `(frames, 1)` and stereo `(frames, 2)` are
-supported. As with the other functions, the input must be finite `float32`
-or `float64`; output has the same dtype and layout, is C-contiguous, and
-does not modify the input. The engine calculates in `float32`. It does not
-normalize peaks, so leave headroom before writing integer PCM files.
+`1e-5`; the lower safety bound avoids overflow in libpaulstretch's signed-int
+input-skip calculation. Only mono `(frames,)` / `(frames, 1)` and stereo
+`(frames, 2)` are supported. As with the other functions, the input must be
+finite `float32` or `float64`; output has the same dtype and layout, is
+C-contiguous, and does not modify the input. The engine calculates in
+`float32`. It does not normalize peaks, so leave headroom before writing
+integer PCM files.
 
 PaulStretch randomizes spectral phase. **Repeated calls on the same audio
 produce different waveforms** while keeping the same output frame count.

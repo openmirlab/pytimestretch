@@ -37,6 +37,9 @@ namespace {
 
 constexpr size_t kFftSize = 4096;
 constexpr size_t kMinInputFrames = 20 * kFftSize;
+// Upstream computes a signed-int input skip of roughly fft_size / stretch.
+// This floor leaves ample margin below INT_MAX for that intermediate.
+constexpr double kMinDurationRatio = 1e-5;
 // Upstream FFT construction advances a process-global non-atomic seed.
 // Keep concurrent calls from racing while still releasing Python's GIL.
 std::mutex render_mutex;
@@ -54,9 +57,9 @@ nb::ndarray<nb::numpy, float, nb::ndim<2>> render(
     if (sample_rate <= 0) {
         throw std::invalid_argument("paulstretch: sample_rate must be > 0");
     }
-    if (!std::isfinite(duration_ratio) || duration_ratio < 1.0 ||
+    if (!std::isfinite(duration_ratio) || duration_ratio < kMinDurationRatio ||
         duration_ratio > static_cast<double>(std::numeric_limits<float>::max())) {
-        throw std::invalid_argument("paulstretch: duration_ratio must be finite and >= 1");
+        throw std::invalid_argument("paulstretch: duration_ratio must be finite and >= 1e-5");
     }
 
     const float ratio = static_cast<float>(duration_ratio);
