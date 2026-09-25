@@ -10,3 +10,6 @@
 [submodule "extern/libpaulstretch"]
 	path = extern/libpaulstretch
 	url = https://github.com/olilarkin/libpaulstretch.git
+[submodule "extern/bungee"]
+	path = extern/bungee
+	url = https://github.com/bungee-audio-stretch/bungee.git

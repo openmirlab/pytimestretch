@@ -19,6 +19,10 @@ def test_paulstretch_module_imports() -> None:
     import pytimestretch._paulstretch  # noqa: F401
 
 
+def test_bungee_module_imports() -> None:
+    import pytimestretch._bungee  # noqa: F401
+
+
 def test_paulstretch_engine_info_reports_pinned_build() -> None:
     from pytimestretch import _paulstretch
 

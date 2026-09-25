@@ -30,5 +30,8 @@ def test_combined_license_metadata_and_notices() -> None:
         "licenses/licenses/nanobind-LICENSE",
         "licenses/extern/libpaulstretch/COPYING",
         "licenses/extern/libpaulstretch/vendor/kissfft/COPYING_kiss_fft.txt",
+        "licenses/extern/bungee/LICENSE",
+        "licenses/extern/bungee/submodules/eigen/COPYING.MPL2",
+        "licenses/licenses/pffft-LICENSE",
     ):
         assert any(name.endswith(suffix) for name in names)

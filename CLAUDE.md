@@ -36,9 +36,17 @@ audio-tool category remains a separate policy follow-up.
   especially approximate duration on short clips. It randomizes spectral
   phase across calls. A native mutex protects upstream's process-global
   non-atomic seed counter from concurrent calls.
+- `scrub.py` owns the separate exact-length `time_scrub` operation through
+  Bungee Basic's granular position API. Its `(output_frame, source_frame)`
+  points allow forward, held, or reverse source motion. It supports mono/
+  stereo, 8–192 kHz, and global pitch within ±24 semitones. The binding
+  handles edge reads and measured synthesis delay; `time_warp` and
+  `_backends.py` remain forward-only. Basic's stationary-grain pitch bias and
+  dense-click drift and its weak/silent very-short outputs are documented
+  limitations.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
-  call the Rubber Band, Signalsmith Stretch, and libpaulstretch C++ libraries
+  call the Rubber Band, Signalsmith Stretch, libpaulstretch, and Bungee Basic C++ libraries
   directly. Do not wrap `pyrubberband`/`python-stretch` (references only) or
   re-implement engine algorithms. The Python/Numba stretcher is a
   non-blocking research lane; never describe it as an engine replacement.
@@ -63,6 +71,8 @@ audio-tool category remains a separate policy follow-up.
 5. Bind libpaulstretch separately for creative extreme stretching. Preserve
    its native ratio and approximate duration, as chosen in the blind vocal
    comparison; keep the original three functions' exact-length contract.
+6. Bind Bungee Basic separately for output-first source-position curves that
+   can hold and reverse. Preserve the existing backend registry.
 
 The Python research lane (blind listening, voice/mixed material, creative
 control) runs in parallel and never gates these steps.
@@ -77,7 +87,7 @@ This is a Python package with C++ native extensions. Document installation
 through uv: source checkout uses `uv sync --python 3.12 --no-dev`; a downloaded
 wheel uses `uv venv --python 3.12` and `uv pip install <matching-wheel>`.
 Run user scripts with `uv run --no-project python <script>` in that environment.
-Source builds require a C++20 toolchain; matching wheels contain all three
+Source builds require a C++20 toolchain; matching wheels contain all four
 engines. The existing Rubber Band and Signalsmith targets remain C++17.
 
 README acknowledgments credit the engine and binding authors and the reference
@@ -100,7 +110,8 @@ suite; a shared runner's timing ratio is not a portable correctness contract.
 
 The engines are git submodules under `extern/` (Rubber Band v4.0.0,
 Signalsmith Stretch 1.3.2 + main@57b93f4, Signalsmith Linear 0.3.1,
-libpaulstretch v0.3.0 with bundled KissFFT),
+libpaulstretch v0.3.0 with bundled KissFFT, Bungee Basic v2.4.30 with
+nested Eigen and PFFFT),
 compiled by scikit-build-core/CMake into `pytimestretch._<engine>` modules;
 never link a system library. `uv sync` installs non-editably, so after a C++
 change run `uv sync --reinstall-package pytimestretch`. Tests stay offline;
@@ -121,6 +132,9 @@ The combined package is GPL-2.0-only because its distributions include
 libpaulstretch v0.3.0. Original pytimestretch code and Rubber Band retain
 their GPL-2.0-or-later grants; the combination is conveyed under GPLv2.
 `NOTICE` lists every vendored component, its pinned revision, and license.
+The Bungee Basic and Eigen sources retain MPL-2.0 grants; the GPLv2
+combination is additionally distributed under GPLv2 per MPL Section 3.3.
+PFFFT's UCAR-derived notice is in `licenses/pffft-LICENSE`.
 Update `NOTICE` whenever a submodule revision or a statically linked
 dependency changes. Paul's 2026-09-24 public-source approval supersedes the
 earlier private-repository gate. Keep the `Private :: Do Not Upload`

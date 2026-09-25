@@ -6,7 +6,9 @@ libpaulstretch v0.3.0 and are conveyed under GNU GPL version 2 only. The
 original pytimestretch code authored by Paul Chen and OpenMIRLab remains
 licensed GPL-2.0-or-later; Rubber Band is also GPL-2.0-or-later. Those
 component grants do not change the GPLv2-only terms of the combined
-distribution while libpaulstretch is included. It is distributed WITHOUT
+distribution while libpaulstretch is included. Bungee Basic and Eigen remain
+available under MPL-2.0, and the GPL combination is additionally distributed
+under GPLv2 as permitted by MPL-2.0 Section 3.3. It is distributed WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE. See LICENSE for the full GPLv2 text.
 
@@ -40,6 +42,30 @@ under extern/ and compiled into pytimestretch's binary wheels:
   Copyright (c) 2003-2004 Mark Borgerding.
   BSD-style three-clause terms and disclaimer:
   extern/libpaulstretch/vendor/kissfft/COPYING_kiss_fft.txt
+
+- Bungee Basic v2.4.30 (commit 8cb6977d0c1a1b411ac320493b3c7f5182ed2d22)
+  Copyright (c) 2020-2026 Parabola Research Limited.
+  MPL-2.0. Full text: extern/bungee/LICENSE.
+  https://github.com/bungee-audio-stretch/bungee/tree/8cb6977d0c1a1b411ac320493b3c7f5182ed2d22
+  This package compiles the open-source Basic edition, not Bungee Pro.
+
+- Eigen (commit c29c800126982c561e8d0b9255dc65474cd98de3), a
+  header-only linear algebra dependency used by Bungee Basic.
+  Primarily MPL-2.0; see extern/bungee/submodules/eigen/COPYING.README,
+  COPYING.MPL2, and COPYING.BSD for the applicable file licenses.
+  https://gitlab.com/libeigen/eigen/-/tree/c29c800126982c561e8d0b9255dc65474cd98de3
+
+- PFFFT (commit 02fe7715a5bf8bfd914681c53429600f94e0f536),
+  including FFTPACK-derived code, compiled as Bungee Basic's FFT backend.
+  Copyright (c) 2013 Julien Pommier; FFTPACK origins by Dr Paul
+  Swarztrauber/NCAR, with the UCAR copyright and redistribution terms.
+  Full terms: licenses/pffft-LICENSE. Original notices remain in the
+  vendored pffft.c and fftpack.c source files.
+  https://bitbucket.org/jpommier/pffft/src/02fe7715a5bf8bfd914681c53429600f94e0f536/
+
+The matching MPL-licensed source and its notices are in the public GitHub
+repository at the pinned revisions above and in this package's source
+distribution. Binary-wheel recipients can obtain those exact sources there.
 
 - nanobind (runtime statically linked into each extension module)
   Copyright (c) Wenzel Jakob.

@@ -1,6 +1,6 @@
 # pytimestretch
 
-**Time stretching, pitch shifting, marker-based time warping, and extreme spectral stretching for NumPy audio.**
+**Time stretching, pitch shifting, time warping, position scrubbing, and extreme spectral stretching for NumPy audio.**
 
 [![Wheels](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml/badge.svg)](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml)
 [![License: GPL-2.0-only](https://img.shields.io/badge/license-GPL--2.0--only-blue.svg)](LICENSE)
@@ -11,16 +11,17 @@ Rubber Band and Signalsmith Stretch provide precise native audio-processing
 engines. pytimestretch gives them one small Python interface: pass a NumPy
 array, choose a duration, pitch, or timing map, and receive an array with a
 predictable shape, dtype, and frame count. libpaulstretch adds a separate
-creative operation for long, smeared spectral textures.
+creative operation for long, smeared spectral textures. Bungee Basic adds
+playhead control that can hold or reverse the source while output continues.
 
 This is a Python package with C++ native extensions, not a pure-Python
-implementation. All three engines are compiled into the package and called
+implementation. All four engines are compiled into the package and called
 directly in memory.
 Processing needs no system Rubber Band installation, command-line subprocess,
 intermediate WAV file, or runtime dependency on another Python wrapper.
 
-This is an early-stage package. **v0.1.0 is the first source tag; the
-extreme-stretch operation has no source tag yet. There is no PyPI release.**
+This is an early-stage package. **v0.1.0 is the first source tag;
+`extreme_stretch` and `time_scrub` have no source tag yet. There is no PyPI release.**
 The API may change during the 0.x series.
 
 ## Acknowledgments
@@ -36,6 +37,11 @@ The audio algorithms are the work of the upstream engine authors:
   algorithm; **Oli Larkin** — [libpaulstretch](https://github.com/olilarkin/libpaulstretch),
   the C++20 implementation used by `extreme_stretch`. Its bundled KissFFT
   path is used for all platforms in this package.
+- **Parabola Research Limited** — [Bungee Basic](https://github.com/bungee-audio-stretch/bungee),
+  the open-source position-controlled granular stretcher used by `time_scrub`.
+  Its [Eigen](https://gitlab.com/libeigen/eigen) and
+  [PFFFT](https://bitbucket.org/jpommier/pffft) dependencies are vendored
+  with it. The commercial Bungee Pro edition is not included.
 - **Wenzel Jakob and contributors** — [nanobind](https://github.com/wjakob/nanobind),
   which connects the C++ engines to Python and NumPy.
 
@@ -62,6 +68,8 @@ See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 - `time_warp`: map source frame positions to output frame positions.
 - `extreme_stretch`: make long spectral textures with libpaulstretch;
   preserves the engine's requested factor and returns an approximate length.
+- `time_scrub`: draw the source playhead's path through output time, including
+  holds and reversals, through Bungee Basic; returns an exact frame count.
 - Two interchangeable backends: `"rubberband"` (default) and `"signalsmith"`.
 - Formant preservation and `"high"` / `"balanced"` quality presets.
 - Mono or multichannel, frame-major NumPy arrays; exact output frame counts
@@ -223,11 +231,64 @@ produce different waveforms** while keeping the same output frame count.
 The current whole-buffer API is meant for ordinary clips and can use
 substantial memory for very large ratios; streaming output is not exposed.
 
+## Hold and reverse with Bungee Basic
+
+`time_scrub` follows a **source-position curve**. Each control point says
+which source frame should be heard at an output-frame boundary. Output time
+always moves forward; source position can move forward, hold still, or move
+backward. This is the control that makes a held vocal or a pitched reverse
+noticeably different from cutting, repeating, or directly resampling audio.
+The output length is exactly the final point's output frame.
+
+```python
+import numpy as np
+import pytimestretch as pts
+
+sr = 44_100
+source = (0.2 * np.sin(2 * np.pi * 220 * np.arange(2 * sr) / sr)).astype(np.float32)
+result = pts.time_scrub(
+    source,
+    sr,
+    control_points=[
+        (0, 0),            # output 0 s reads source 0 s
+        (sr, sr),          # play forward for 1 s
+        (2 * sr, sr),      # hold source 1 s for another second
+        (3 * sr, sr // 2), # then travel backward for 1 s
+    ],
+)
+assert result.shape == (3 * sr,)
+```
+
+The pairs are `(output_frame, source_frame)`, unlike `time_warp`'s
+`(source_frame, output_frame)` markers. `time_warp` moves forward between
+anchors; `time_scrub` uses Bungee Basic's lower-level granular position
+control for holds and reversals. Adjacent points are connected linearly.
+Output frames must be integers, start at zero, and strictly increase. Source
+positions may be fractional within `[0, len(audio)]`; `len(audio)` is a
+valid endpoint. Jumps between source positions are not supported in this
+version. `semitones=0.0` is optional and accepts −24 through +24, applied
+globally while the position curve changes.
+
+Input is finite float32/float64 mono or stereo NumPy audio at 8–192 kHz.
+The result keeps dtype and channel layout, uses float32 internally, and
+does not modify the input. Bungee Basic has no formant-preservation or
+quality-preset option. It can smear sharp turns and dense transients: a
+48 kHz probe placed isolated forward/reverse impulses within two samples,
+but 25–50 ms click trains had peaks displaced by up to about 17 ms. A
+stationary 440 Hz sine also measured about 446 Hz during a hold. These
+measurements describe this build and material, not a general guarantee.
+Very short outputs can be mostly silent while Bungee's synthesis window
+starts: at 48 kHz, a 512-frame identity render of a tone was silent and a
+1,000-frame render was weak. Use longer buffers for audible effects.
+Listen to a few seconds of rhythmic or vocal material before using a render. The API
+processes whole buffers offline; it does not expose a real-time stream.
+
 ## Processing contract
 
 This section covers the precise `time_stretch`, `pitch_shift`, and
 `time_warp` functions, which share Rubber Band and Signalsmith's backend
-contract. The creative operation above has its own length and channel rules.
+contract. `extreme_stretch` and `time_scrub` have their own length and
+channel rules as described above.
 
 | Input or output | Rule |
 | --- | --- |
@@ -312,9 +373,9 @@ uv run ruff check .
 uv build
 ```
 
-The default suite checks the shared contract on both compiled engines and a
-test-only fake, plus engine-specific pitch, placement, silence, channel
-independence, and determinism. CI tests installed wheels across the matrix
+The default suite checks the shared contract on both interchangeable engines
+and a test-only fake, plus creative-operation and engine-specific pitch,
+placement, silence, channel, and determinism cases. CI tests installed wheels across the matrix
 above. `uv build` builds an sdist and then a wheel from that sdist.
 
 Two host-dependent speed comparisons are excluded from the default suite.
@@ -337,8 +398,11 @@ parity. Real-audio fixtures are not bundled with the package.
 included libpaulstretch v0.3.0 is documented upstream as GPLv2. Our
 original code remains GPL-2.0-or-later, and Rubber Band is
 GPL-2.0-or-later, but the combined package is distributed under GPLv2
-terms. Signalsmith Stretch and Signalsmith Linear are MIT; KissFFT and
-nanobind's runtime have BSD-style licenses. See [LICENSE](LICENSE),
+terms. Bungee Basic and its Eigen dependency retain MPL-2.0 grants, with
+the combined GPL work additionally distributed under GPLv2 according to
+MPL-2.0 Section 3.3. PFFFT and its FFTPACK-derived code have UCAR-style
+permissive terms. Signalsmith Stretch and Signalsmith Linear are MIT;
+KissFFT and nanobind's runtime have BSD-style licenses. See [LICENSE](LICENSE),
 [NOTICE](NOTICE), and the vendored license files included with distributions.
 
 Rubber Band also offers [separate commercial licensing](https://breakfastquay.com/rubberband/license.html).

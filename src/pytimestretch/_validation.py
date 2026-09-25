@@ -55,6 +55,12 @@ TIME_WARP_KEYWORDS = ("markers", "semitones", "formants", "quality", "backend")
 FORMANTS_CHOICES = ("shift", "preserve")
 QUALITY_CHOICES = ("high", "balanced")
 
+_CONTROL_POINTS_EXAMPLE = (
+    "control_points must be (output_frame, source_frame) pairs, e.g. "
+    "[(0, 0), (44100, 44100), (88200, 44100)]; output frames start at 0 "
+    "and strictly increase, while source positions may hold or reverse"
+)
+
 _QUALITY_FAST_REMOVED_MESSAGE = (
     '"fast" was removed; use "balanced" (faster than "high")'
 )
@@ -245,6 +251,61 @@ def _check_semitones(semitones: object, *, required: bool = False) -> float:
 def _pitch_scale(semitones: float) -> float:
     """Convert a semitone offset to a linear frequency ratio."""
     return 2.0 ** (semitones / 12.0)
+
+
+def _check_control_points(control_points: object, frames: int) -> np.ndarray:
+    """Validate output-first Bungee position points and return float64 (K, 2).
+
+    Output coordinates are integer frame boundaries. Source coordinates may
+    be fractional and may move in either direction, but stay within the
+    input's boundary range [0, frames]. A fresh array isolates the native
+    render from mutation of the caller's point collection.
+    """
+    if control_points is None:
+        raise InvalidAudioError(f"control_points is required: {_CONTROL_POINTS_EXAMPLE}")
+    try:
+        points = list(control_points)
+    except (TypeError, ValueError) as exc:
+        raise InvalidAudioError(_CONTROL_POINTS_EXAMPLE) from exc
+    if len(points) < 2:
+        raise InvalidAudioError("control_points must have at least 2 pairs")
+
+    result = np.empty((len(points), 2), dtype=np.float64)
+    previous_output = -1
+    for index, point in enumerate(points):
+        try:
+            output_frame, source_frame = point
+        except (TypeError, ValueError) as exc:
+            raise InvalidAudioError(
+                f"control_points[{index}] must be a pair; {_CONTROL_POINTS_EXAMPLE}"
+            ) from exc
+        if isinstance(output_frame, (bool, np.bool_)) or not isinstance(
+            output_frame, numbers.Integral
+        ):
+            raise InvalidAudioError("control_points output frames must be integers")
+        if isinstance(source_frame, (bool, np.bool_)) or not isinstance(
+            source_frame, numbers.Real
+        ):
+            raise InvalidAudioError("control_points source frames must be real numbers")
+        output = int(output_frame)
+        try:
+            source = float(source_frame)
+        except OverflowError as exc:
+            raise InvalidAudioError("control_points source frame is too large") from exc
+        if output > 2**53:
+            raise InvalidAudioError("control_points output frame is too large")
+        if index == 0 and output != 0:
+            raise InvalidAudioError("control_points must start at output frame 0")
+        if output <= previous_output:
+            raise InvalidAudioError("control_points output frames must strictly increase")
+        if not math.isfinite(source) or not 0 <= source <= frames:
+            raise InvalidAudioError(
+                f"control_points source frames must be finite and within [0, {frames}]"
+            )
+        result[index] = (output, source)
+        previous_output = output
+
+    return result
 
 
 def _check_formants(formants: object) -> bool:
