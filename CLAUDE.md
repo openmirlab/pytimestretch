@@ -42,7 +42,8 @@ audio-tool category remains a separate policy follow-up.
   stereo, 8–192 kHz, and global pitch within ±24 semitones. The binding
   handles edge reads and measured synthesis delay; `time_warp` and
   `_backends.py` remain forward-only. Basic's stationary-grain pitch bias and
-  dense-click drift are documented limitations.
+  dense-click drift and its weak/silent very-short outputs are documented
+  limitations.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
   call the Rubber Band, Signalsmith Stretch, libpaulstretch, and Bungee Basic C++ libraries

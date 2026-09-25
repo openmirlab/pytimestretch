@@ -45,6 +45,7 @@ def time_scrub(
     requested frame count; the input is unchanged. Bungee Basic processes
     internally in float32, has no formant-preservation control, and uses a
     granular window, so sharp transients and abrupt turns may be smeared.
+    Very short outputs may be weak or silent during the synthesis startup.
     ``semitones`` changes pitch globally and must be within two octaves.
     """
     frames, channels = _check_audio(audio)

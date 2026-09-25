@@ -277,7 +277,10 @@ quality-preset option. It can smear sharp turns and dense transients: a
 but 25–50 ms click trains had peaks displaced by up to about 17 ms. A
 stationary 440 Hz sine also measured about 446 Hz during a hold. These
 measurements describe this build and material, not a general guarantee.
-Listen to short rhythmic or vocal material before using a render. The API
+Very short outputs can be mostly silent while Bungee's synthesis window
+starts: at 48 kHz, a 512-frame identity render of a tone was silent and a
+1,000-frame render was weak. Use longer buffers for audible effects.
+Listen to a few seconds of rhythmic or vocal material before using a render. The API
 processes whole buffers offline; it does not expose a real-time stream.
 
 ## Processing contract
