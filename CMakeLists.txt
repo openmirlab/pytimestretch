@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 # Version is single-sourced by scikit-build-core's regex metadata provider
 # from src/pytimestretch/__about__.py; CMake's own project() version is not
 # read anywhere, so it stays a fixed placeholder.
-project(pytimestretch LANGUAGES CXX)
+project(pytimestretch LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,7 @@ if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/rubberband/.git")
     OUTPUT_STRIP_TRAILING_WHITESPACE
     OUTPUT_VARIABLE PYTIMESTRETCH_RB_REVISION_GIT
     RESULT_VARIABLE PYTIMESTRETCH_RB_GIT_RESULT
+    ERROR_QUIET
   )
   if(PYTIMESTRETCH_RB_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_RB_REVISION_GIT)
     set(PYTIMESTRETCH_RB_REVISION "${PYTIMESTRETCH_RB_REVISION_GIT}")
@@ -118,6 +119,7 @@ if(Git_FOUND)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       OUTPUT_VARIABLE PYTIMESTRETCH_SS_REVISION_GIT
       RESULT_VARIABLE PYTIMESTRETCH_SS_GIT_RESULT
+      ERROR_QUIET
     )
     if(PYTIMESTRETCH_SS_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_SS_REVISION_GIT)
       set(PYTIMESTRETCH_SS_REVISION "${PYTIMESTRETCH_SS_REVISION_GIT}")
@@ -129,6 +131,7 @@ if(Git_FOUND)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       OUTPUT_VARIABLE PYTIMESTRETCH_SS_LINEAR_REVISION_GIT
       RESULT_VARIABLE PYTIMESTRETCH_SS_LINEAR_GIT_RESULT
+      ERROR_QUIET
     )
     if(PYTIMESTRETCH_SS_LINEAR_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_SS_LINEAR_REVISION_GIT)
       set(PYTIMESTRETCH_SS_LINEAR_REVISION "${PYTIMESTRETCH_SS_LINEAR_REVISION_GIT}")
@@ -166,3 +169,41 @@ else()
 endif()
 
 install(TARGETS _signalsmith LIBRARY DESTINATION pytimestretch)
+
+# libpaulstretch v0.3.0 has a distinct, approximate-duration creative
+# contract. Build its C++20 core and bundled KissFFT without invoking its
+# top-level CMake (which would also configure examples/WASM and may fetch
+# PFFFT). Existing engine targets remain C++17.
+set(PYTIMESTRETCH_PAULSTRETCH_REVISION "v0.3.0")
+if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/libpaulstretch/.git")
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/extern/libpaulstretch" rev-parse HEAD
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE PYTIMESTRETCH_PAULSTRETCH_REVISION_GIT
+    RESULT_VARIABLE PYTIMESTRETCH_PAULSTRETCH_GIT_RESULT
+    ERROR_QUIET
+  )
+  if(PYTIMESTRETCH_PAULSTRETCH_GIT_RESULT EQUAL 0 AND PYTIMESTRETCH_PAULSTRETCH_REVISION_GIT)
+    set(PYTIMESTRETCH_PAULSTRETCH_REVISION "${PYTIMESTRETCH_PAULSTRETCH_REVISION_GIT}")
+  endif()
+endif()
+
+add_library(paulstretch-core STATIC
+  extern/libpaulstretch/src/paulstretch.cpp
+  extern/libpaulstretch/vendor/kissfft/kiss_fft.c
+  extern/libpaulstretch/vendor/kissfft/kiss_fftr.c
+)
+target_compile_features(paulstretch-core PUBLIC cxx_std_20)
+target_compile_definitions(paulstretch-core PRIVATE KISSFFT)
+target_include_directories(paulstretch-core
+  PUBLIC extern/libpaulstretch/include
+  PRIVATE extern/libpaulstretch/vendor/kissfft
+)
+
+nanobind_add_module(_paulstretch NB_STATIC native/paulstretch_module.cpp)
+target_compile_features(_paulstretch PRIVATE cxx_std_20)
+target_link_libraries(_paulstretch PRIVATE paulstretch-core)
+target_compile_definitions(_paulstretch PRIVATE
+  PYTIMESTRETCH_PAULSTRETCH_SOURCE_REVISION="${PYTIMESTRETCH_PAULSTRETCH_REVISION}"
+)
+install(TARGETS _paulstretch LIBRARY DESTINATION pytimestretch)

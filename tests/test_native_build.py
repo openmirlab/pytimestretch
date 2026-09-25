@@ -15,6 +15,29 @@ def test_signalsmith_module_imports() -> None:
     import pytimestretch._signalsmith  # noqa: F401
 
 
+def test_paulstretch_module_imports() -> None:
+    import pytimestretch._paulstretch  # noqa: F401
+
+
+def test_paulstretch_engine_info_reports_pinned_build() -> None:
+    from pytimestretch import _paulstretch
+
+    info = _paulstretch.engine_info()
+    assert info == {
+        "engine": "libpaulstretch",
+        "version": "0.3.0",
+        "source_revision": info["source_revision"],
+        "fft": "KISSFFT",
+        "fft_size": 4096,
+        "min_input_frames": 81920,
+        "onset_detection": False,
+    }
+    assert info["source_revision"] in {
+        "v0.3.0",  # sdist has sources but no submodule .git metadata
+        "d2de02f1632188ab17f80bd1bfeab98a729cffa9",
+    }
+
+
 def test_engine_info_reports_expected_keys() -> None:
     from pytimestretch import _rubberband
 

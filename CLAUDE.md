@@ -28,10 +28,17 @@ audio-tool category remains a separate policy follow-up.
   `outputSeek`/`process`/`flush` stream for more, fixed seed, short input
   zero-padded) implement it. `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
+- `extreme.py` owns the separate `extreme_stretch` operation backed by
+  libpaulstretch v0.3.0 through `_paulstretch`. It passes the requested
+  ratio through unchanged and returns the native output length; it is not
+  an interchangeable `_backends` entry. It requires at least 81,920 frames,
+  accepts mono/stereo and ratios >= 1, and randomizes spectral phase across
+  calls. A native mutex protects upstream's process-global non-atomic seed
+  counter from concurrent calls.
 - Authoring and musical decisions stay in callers. This package owns the
   NumPy-facing processing contract. Architecture is decided binding-first:
-  call the Rubber Band and Signalsmith Stretch C++ libraries directly. Do not
-  wrap `pyrubberband`/`python-stretch` (references only) and do not
+  call the Rubber Band, Signalsmith Stretch, and libpaulstretch C++ libraries
+  directly. Do not wrap `pyrubberband`/`python-stretch` (references only) or
   re-implement engine algorithms. The Python/Numba stretcher is a
   non-blocking research lane; never describe it as an engine replacement.
 - The source version lives only in `src/pytimestretch/__about__.py`.
@@ -52,6 +59,9 @@ audio-tool category remains a separate policy follow-up.
 4. Add real-audio fixtures, alignment checks, packaging tests, and listening
    evidence. Update README, this file, NOTICE, and CHANGELOG with each
    user-visible capability.
+5. Bind libpaulstretch separately for creative extreme stretching. Preserve
+   its native ratio and approximate duration, as chosen in the blind vocal
+   comparison; keep the original three functions' exact-length contract.
 
 The Python research lane (blind listening, voice/mixed material, creative
 control) runs in parallel and never gates these steps.
@@ -66,7 +76,8 @@ This is a Python package with C++ native extensions. Document installation
 through uv: source checkout uses `uv sync --python 3.12 --no-dev`; a downloaded
 wheel uses `uv venv --python 3.12` and `uv pip install <matching-wheel>`.
 Run user scripts with `uv run --no-project python <script>` in that environment.
-Source builds require a C++17 toolchain; matching wheels contain both engines.
+Source builds require a C++20 toolchain; matching wheels contain all three
+engines. The existing Rubber Band and Signalsmith targets remain C++17.
 
 README acknowledgments credit the engine and binding authors and the reference
 projects pedalboard, pylibrb, python-stretch, and pyrubberband with their specific
@@ -87,7 +98,8 @@ host. Audio correctness and quality-preset behavior remain in the default
 suite; a shared runner's timing ratio is not a portable correctness contract.
 
 The engines are git submodules under `extern/` (Rubber Band v4.0.0,
-Signalsmith Stretch 1.3.2 + main@57b93f4, Signalsmith Linear 0.3.1),
+Signalsmith Stretch 1.3.2 + main@57b93f4, Signalsmith Linear 0.3.1,
+libpaulstretch v0.3.0 with bundled KissFFT),
 compiled by scikit-build-core/CMake into `pytimestretch._<engine>` modules;
 never link a system library. `uv sync` installs non-editably, so after a C++
 change run `uv sync --reinstall-package pytimestretch`. Tests stay offline;
@@ -104,7 +116,9 @@ package release.
 
 ## Licensing gate
 
-The package is GPL-2.0-or-later because its wheels compile in Rubber Band;
+The combined package is GPL-2.0-only because its distributions include
+libpaulstretch v0.3.0. Original pytimestretch code and Rubber Band retain
+their GPL-2.0-or-later grants; the combination is conveyed under GPLv2.
 `NOTICE` lists every vendored component, its pinned revision, and license.
 Update `NOTICE` whenever a submodule revision or a statically linked
 dependency changes. Paul's 2026-09-24 public-source approval supersedes the

@@ -1,7 +1,7 @@
-"""Package facade: version, the time_stretch/pitch_shift/time_warp entry
-points, backend introspection, and public errors.
+"""Package facade: time/pitch/warp and creative extreme-stretch entry points,
+version, backend introspection, and public errors.
 
-Reads: .__about__, ._backends, .errors, .stretch.
+Reads: .__about__, ._backends, .errors, .extreme, .stretch.
 """
 
 from .__about__ import __version__
@@ -14,6 +14,7 @@ from .errors import (
     UnknownBackendError,
     UnsupportedOptionError,
 )
+from .extreme import extreme_stretch
 from .stretch import pitch_shift, time_stretch, time_warp
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "UnsupportedOptionError",
     "__version__",
     "available_backends",
+    "extreme_stretch",
     "pitch_shift",
     "time_stretch",
     "time_warp",

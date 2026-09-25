@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a separate `extreme_stretch` operation using direct libpaulstretch
+  v0.3.0/KissFFT bindings. Preserve the requested factor and native
+  approximate duration; accept mono/stereo clips of at least 81,920 frames.
+  Spectral phase varies across repeated renders.
+- Convey the combined source distribution and wheels under GPL-2.0-only
+  because libpaulstretch is GPLv2; retain original-code GPL-2.0-or-later
+  notices and bundle upstream license files.
 - Use uv throughout installation and execution examples, and distinguish
   C++ source-build requirements from precompiled wheel installation.
 - Credit pedalboard and pylibrb alongside the original engines and other

@@ -5,11 +5,21 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "pytimestretch"
 dynamic = ["version"]
-description = "NumPy bindings for Rubber Band and Signalsmith time stretching and pitch shifting"
+description = "NumPy bindings for Rubber Band, Signalsmith, and PaulStretch audio processing"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "GPL-2.0-or-later"
-license-files = ["LICENSE", "NOTICE"]
+license = "GPL-2.0-only"
+license-files = [
+    "LICENSE",
+    "NOTICE",
+    "licenses/nanobind-LICENSE",
+    "extern/signalsmith-stretch/LICENSE.txt",
+    "extern/signalsmith-linear/LICENSE.txt",
+    "extern/libpaulstretch/COPYING",
+    "extern/libpaulstretch/vendor/kissfft/COPYING_kiss_fft.txt",
+    "extern/rubberband/src/ext/kissfft/COPYING",
+    "extern/rubberband/src/ext/speex/COPYING",
+]
 # The source repository is public; PyPI publication is not yet approved.
 classifiers = ["Private :: Do Not Upload"]
 maintainers = [{ name = "OpenMIRLab", email = "bernie40916@gmail.com" }]
@@ -28,23 +38,27 @@ provider = "scikit_build_core.metadata.regex"
 input = "src/pytimestretch/__about__.py"
 
 [tool.scikit-build.sdist]
-# extern/** carries the vendored engine sources the native build compiles;
-# the sdist->wheel path (what `uv build` exercises) needs them present.
+# Vendored submodule sources must be included for the sdist->wheel path.
 # Drop upstream subtrees this build never touches (docs, packaging glue for
 # other host plugins, the nested cmd/util submodule) to keep the sdist lean.
-include = ["extern/**"]
 exclude = [
     "docs/blueprints/**",
-    "extern/rubberband/otherbuilds",
-    "extern/rubberband/vamp",
-    "extern/rubberband/ladspa-lv2",
-    "extern/rubberband/dotnet",
-    "extern/rubberband/cross",
-    "extern/rubberband/com",
-    "extern/signalsmith-stretch/cmd",
-    "extern/signalsmith-stretch/web",
-    "extern/signalsmith-linear/tests",
-    "**/.git",
+    "extern/rubberband/otherbuilds/**",
+    "extern/rubberband/vamp/**",
+    "extern/rubberband/ladspa-lv2/**",
+    "extern/rubberband/dotnet/**",
+    "extern/rubberband/cross/**",
+    "extern/rubberband/com/**",
+    "extern/signalsmith-stretch/cmd/**",
+    "extern/signalsmith-stretch/web/**",
+    "extern/signalsmith-linear/tests/**",
+    "extern/libpaulstretch/.github/**",
+    "extern/libpaulstretch/examples/**",
+    "extern/libpaulstretch/npm/**",
+    "extern/libpaulstretch/scripts/**",
+    "extern/libpaulstretch/tests/**",
+    "extern/libpaulstretch/vendor/dr_libs/**",
+    "extern/**/.git",
 ]
 
 [dependency-groups]
@@ -76,7 +90,7 @@ test-requires = ["pytest"]
 # The engine_info() print runs before pytest so each wheel's engine/FFT
 # choice (e.g. macOS vdsp/accelerate vs. Linux/Windows builtin) lands in
 # the CI log even on a fully green run, not just on failure.
-test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info()))\" && pytest {project}/tests -q"
+test-command = "python -c \"import json, pytimestretch._rubberband as rb, pytimestretch._signalsmith as ss, pytimestretch._paulstretch as ps; print('engine_info rubberband', json.dumps(rb.engine_info())); print('engine_info signalsmith', json.dumps(ss.engine_info())); print('engine_info paulstretch', json.dumps(ps.engine_info()))\" && pytest {project}/tests -q"
 
 [tool.cibuildwheel.macos]
 # macOS runner is Apple Silicon (macos-14); build both arm64 and x86_64 as

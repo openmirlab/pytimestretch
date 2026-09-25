@@ -7,3 +7,6 @@
 [submodule "extern/signalsmith-linear"]
 	path = extern/signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
+[submodule "extern/libpaulstretch"]
+	path = extern/libpaulstretch
+	url = https://github.com/olilarkin/libpaulstretch.git

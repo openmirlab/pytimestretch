@@ -1,12 +1,14 @@
 pytimestretch
 Copyright (c) 2026 Paul Chen and OpenMIRLab.
 
-pytimestretch is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the Free
-Software Foundation, either version 2 of the License, or (at your option) any
-later version. It is distributed WITHOUT ANY WARRANTY; without even the
-implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-LICENSE for the full GPL-2.0 text.
+The combined pytimestretch source distribution and binary wheels include
+libpaulstretch v0.3.0 and are conveyed under GNU GPL version 2 only. The
+original pytimestretch code authored by Paul Chen and OpenMIRLab remains
+licensed GPL-2.0-or-later; Rubber Band is also GPL-2.0-or-later. Those
+component grants do not change the GPLv2-only terms of the combined
+distribution while libpaulstretch is included. It is distributed WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See LICENSE for the full GPLv2 text.
 
 Compiled into the native extension modules
 ------------------------------------------
@@ -18,8 +20,8 @@ under extern/ and compiled into pytimestretch's binary wheels:
   Copyright 2007-2024 Particular Programs Ltd.
   GPL-2.0-or-later, or a commercial licence from Breakfast Quay.
   https://breakfastquay.com/rubberband/license.html
-  Linking Rubber Band is why pytimestretch as a whole is GPL. Closed-source
-  products that distribute it need a commercial Rubber Band licence.
+  Rubber Band is one GPL-covered component. Its separate commercial licence
+  does not relicense the other GPL-covered components of this package.
 
 - Signalsmith Stretch 1.3.2 (commit 57b93f4e9206a089a45387eaa39bdc9f310d3308)
   Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.
@@ -29,9 +31,20 @@ under extern/ and compiled into pytimestretch's binary wheels:
   Copyright (c) 2025 Signalsmith Audio.
   MIT License. extern/signalsmith-linear/LICENSE.txt
 
+- libpaulstretch v0.3.0 (commit d2de02f1632188ab17f80bd1bfeab98a729cffa9)
+  C++ implementation by Oli Larkin of Paul Nasca's PaulStretch algorithm.
+  GPL-2.0-only (upstream README: GPLv2; full text: extern/libpaulstretch/COPYING).
+  https://github.com/olilarkin/libpaulstretch
+
+- KissFFT, bundled by libpaulstretch and compiled here as its FFT backend
+  Copyright (c) 2003-2004 Mark Borgerding.
+  BSD-style three-clause terms and disclaimer:
+  extern/libpaulstretch/vendor/kissfft/COPYING_kiss_fft.txt
+
 - nanobind (runtime statically linked into each extension module)
   Copyright (c) Wenzel Jakob.
-  BSD-3-Clause License. https://github.com/wjakob/nanobind/blob/master/LICENSE
+  BSD-3-Clause License. Full text: licenses/nanobind-LICENSE
+  https://github.com/wjakob/nanobind/blob/master/LICENSE
 
 References, not dependencies
 ----------------------------
