@@ -1,25 +1,27 @@
 # pytimestretch
 
-**Time stretching, pitch shifting, and marker-based time warping for NumPy audio.**
+**Time stretching, pitch shifting, marker-based time warping, and extreme spectral stretching for NumPy audio.**
 
 [![Wheels](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml/badge.svg)](https://github.com/openmirlab/pytimestretch/actions/workflows/wheels.yml)
-[![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+[![License: GPL-2.0-only](https://img.shields.io/badge/license-GPL--2.0--only-blue.svg)](LICENSE)
 
 ## Why this exists
 
-Rubber Band and Signalsmith Stretch provide capable native audio-processing
+Rubber Band and Signalsmith Stretch provide precise native audio-processing
 engines. pytimestretch gives them one small Python interface: pass a NumPy
 array, choose a duration, pitch, or timing map, and receive an array with a
-predictable shape, dtype, and frame count.
+predictable shape, dtype, and frame count. libpaulstretch adds a separate
+creative operation for long, smeared spectral textures.
 
 This is a Python package with C++ native extensions, not a pure-Python
-implementation. Both engines are compiled into the package and called
+implementation. All three engines are compiled into the package and called
 directly in memory.
 Processing needs no system Rubber Band installation, command-line subprocess,
 intermediate WAV file, or runtime dependency on another Python wrapper.
 
-This is an early-stage package. **v0.1.0 is the first source tag; there is
-no PyPI release yet**. The API may change during the 0.x series.
+This is an early-stage package. **v0.1.0 is the first source tag; the
+extreme-stretch operation has no source tag yet. There is no PyPI release.**
+The API may change during the 0.x series.
 
 ## Acknowledgments
 
@@ -30,6 +32,10 @@ The audio algorithms are the work of the upstream engine authors:
 - **Geraint Luff / Signalsmith Audio** — [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch)
   and [Signalsmith Linear](https://github.com/Signalsmith-Audio/linear), the
   time/pitch processor and its FFT support.
+- **Paul Nasca** — the original [PaulStretch](https://hypermammut.sourceforge.net/paulstretch/)
+  algorithm; **Oli Larkin** — [libpaulstretch](https://github.com/olilarkin/libpaulstretch),
+  the C++20 implementation used by `extreme_stretch`. Its bundled KissFFT
+  path is used for all platforms in this package.
 - **Wenzel Jakob and contributors** — [nanobind](https://github.com/wjakob/nanobind),
   which connects the C++ engines to Python and NumPy.
 
@@ -54,10 +60,12 @@ See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 - `time_stretch`: change duration while keeping pitch, or shift both together.
 - `pitch_shift`: transpose audio without changing its duration.
 - `time_warp`: map source frame positions to output frame positions.
+- `extreme_stretch`: make long spectral textures with libpaulstretch;
+  preserves the engine's requested factor and returns an approximate length.
 - Two interchangeable backends: `"rubberband"` (default) and `"signalsmith"`.
 - Formant preservation and `"high"` / `"balanced"` quality presets.
-- Mono or multichannel, frame-major NumPy arrays; exact output frame counts,
-  preserved input dtype, and no input mutation.
+- Mono or multichannel, frame-major NumPy arrays; exact output frame counts
+  for the first three operations, preserved input dtype, and no input mutation.
 
 ## Scope
 
@@ -70,15 +78,16 @@ belong to the caller.
 ### From source
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git,
-and provide a C++17 toolchain (GCC, Clang, or MSVC). Python 3.10 or newer is
+and provide a C++20 toolchain (GCC, Clang, or MSVC). Python 3.10 or newer is
 required; the example selects Python 3.12, which uv can provision. The native
 build uses CMake 3.24 or newer and scikit-build-core; the isolated build
 installs its Python build dependencies and obtains CMake when needed.
 
-Clone the pinned source tag and let uv create `.venv` and install the package:
+Clone the current source (including its pinned engine submodules) and let uv
+create `.venv` and install the package:
 
 ```bash
-git clone --branch v0.1.0 --recurse-submodules https://github.com/openmirlab/pytimestretch.git
+git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
 uv sync --python 3.12 --no-dev
 ```
@@ -160,7 +169,50 @@ output = pts.time_stretch(audio, sr, duration_ratio=1.25)
 sf.write("output.wav", output, sr, subtype="FLOAT")
 ```
 
+## Extreme spectral stretch
+
+`extreme_stretch` calls [libpaulstretch](https://github.com/olilarkin/libpaulstretch)
+directly for the smeared, atmospheric sound of extreme time stretching. It
+is a **separate operation**, not a third interchangeable backend for
+`time_stretch`: it has no marker, pitch, formant, or quality options.
+
+```python
+import numpy as np
+import pytimestretch as pts
+
+sr = 44_100
+source = (0.2 * np.sin(2 * np.pi * 220 * np.arange(4 * sr) / sr)).astype(np.float32)
+texture = pts.extreme_stretch(source, sr, duration_ratio=8.0)
+print(texture.shape)  # (1_376_256,) with the pinned engine and FFT settings
+```
+
+The `duration_ratio` is the factor sent to the engine: `8.0` asks for an
+eightfold stretch. libpaulstretch emits complete 4,096-frame chunks and
+stops according to its input-consumption rule. It does **not** promise
+exactly `len(source) * duration_ratio` frames; this four-second example
+produces about 31.21 seconds, not exactly 32. The binding does not adjust
+the requested factor, pad, or trim its result. Use `time_stretch` when a
+timeline requires an exact length.
+
+Input must have at least **81,920 frames** (20 FFT chunks), regardless of
+sample rate. This prevents very short clips from being dominated by the
+engine's fixed startup window. `duration_ratio` must be finite and at least
+1.0. Only mono `(frames,)` / `(frames, 1)` and stereo `(frames, 2)` are
+supported. As with the other functions, the input must be finite `float32`
+or `float64`; output has the same dtype and layout, is C-contiguous, and
+does not modify the input. The engine calculates in `float32`. It does not
+normalize peaks, so leave headroom before writing integer PCM files.
+
+PaulStretch randomizes spectral phase. **Repeated calls on the same audio
+produce different waveforms** while keeping the same output frame count.
+The current whole-buffer API is meant for ordinary clips and can use
+substantial memory for very large ratios; streaming output is not exposed.
+
 ## Processing contract
+
+This section covers the precise `time_stretch`, `pitch_shift`, and
+`time_warp` functions, which share Rubber Band and Signalsmith's backend
+contract. The creative operation above has its own length and channel rules.
 
 | Input or output | Rule |
 | --- | --- |
@@ -266,12 +318,16 @@ parity. Real-audio fixtures are not bundled with the package.
 
 ## License
 
-**GPL-2.0-or-later.** Wheels include Rubber Band, which is GPL-2.0-or-later;
-Signalsmith Stretch and Signalsmith Linear are MIT, and nanobind's runtime
-is BSD-3-Clause. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+**GPL-2.0-only for the combined source distribution and wheels.** The
+included libpaulstretch v0.3.0 is documented upstream as GPLv2. Our
+original code remains GPL-2.0-or-later, and Rubber Band is
+GPL-2.0-or-later, but the combined package is distributed under GPLv2
+terms. Signalsmith Stretch and Signalsmith Linear are MIT; KissFFT and
+nanobind's runtime have BSD-style licenses. See [LICENSE](LICENSE),
+[NOTICE](NOTICE), and the vendored license files included with distributions.
 
 Rubber Band also offers [separate commercial licensing](https://breakfastquay.com/rubberband/license.html).
-This repository and its distributed package remain under the license above.
+The GPLv2 terms above apply to this combined distribution.
 
 ## Support
 
