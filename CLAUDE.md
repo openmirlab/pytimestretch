@@ -10,7 +10,7 @@ audio-tool category remains a separate policy follow-up.
 ## State and ownership
 
 - Public GitHub source approved by Paul on 2026-09-24 after the Tactus trial.
-  The first source tag, `v0.1.0`, is approved after verification.
+  `v0.2.0` is the source tag for `extreme_stretch` and `time_scrub`.
   No PyPI publishing is approved. Keep the
   `Private :: Do Not Upload` classifier as the package-upload guard.
 - `stretch.py` holds the public functions `time_stretch`, `pitch_shift`,

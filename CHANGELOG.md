@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## [0.2.0] - 2026-09-25
+
+Source tag available from GitHub; not published to PyPI.
 
 - Add `time_scrub` using direct Bungee Basic v2.4.30 bindings. Output-first
   control points drive continuous forward, held, and reverse source motion;
@@ -51,4 +53,5 @@ First versioned source snapshot. Available from GitHub; not published to PyPI.
 - Matched the imported version to installed distribution metadata in the
   package smoke test, replacing the bootstrap-only version assertion.
 
+[0.2.0]: https://github.com/openmirlab/pytimestretch/tree/v0.2.0
 [0.1.0]: https://github.com/openmirlab/pytimestretch/tree/v0.1.0

@@ -20,8 +20,8 @@ directly in memory.
 Processing needs no system Rubber Band installation, command-line subprocess,
 intermediate WAV file, or runtime dependency on another Python wrapper.
 
-This is an early-stage package. **v0.1.0 is the first source tag;
-`extreme_stretch` and `time_scrub` have no source tag yet. There is no PyPI release.**
+This is an early-stage package. **v0.2.0 is a GitHub source tag that includes
+`extreme_stretch` and `time_scrub`. There is no PyPI release.**
 The API may change during the 0.x series.
 
 ## Acknowledgments
@@ -97,6 +97,8 @@ create `.venv` and install the package:
 ```bash
 git clone --recurse-submodules https://github.com/openmirlab/pytimestretch.git
 cd pytimestretch
+git checkout v0.2.0
+git submodule update --init --recursive
 uv sync --python 3.12 --no-dev
 ```
 
@@ -282,6 +284,8 @@ starts: at 48 kHz, a 512-frame identity render of a tone was silent and a
 1,000-frame render was weak. Use longer buffers for audible effects.
 Listen to a few seconds of rhythmic or vocal material before using a render. The API
 processes whole buffers offline; it does not expose a real-time stream.
+Output peaks can exceed input peaks, so leave headroom and set the final gain
+after rendering.
 
 ## Processing contract
 
