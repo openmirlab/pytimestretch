@@ -233,6 +233,11 @@ add_library(bungee-pffft STATIC
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(bungee-pffft PRIVATE -ffast-math -fno-finite-math-only -fno-exceptions)
 endif()
+if(MSVC)
+  # fftpack.c uses M_PI; unlike pffft.c, it does not request MSVC's math
+  # constants before including math.h.
+  target_compile_definitions(bungee-pffft PRIVATE _USE_MATH_DEFINES)
+endif()
 
 add_library(bungee-core STATIC
   extern/bungee/src/Assert.cpp
