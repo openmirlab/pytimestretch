@@ -175,6 +175,10 @@ sf.write("output.wav", output, sr, subtype="FLOAT")
 directly for the smeared, atmospheric sound of extreme time stretching. It
 is a **separate operation**, not a third interchangeable backend for
 `time_stretch`: it has no marker, pitch, formant, or quality options.
+Here, **extreme describes the spectral sound, not a minimum multiplier**.
+There is no creative cutoff such as 2x or 8x: ratios below 1 can shorten
+audio with the same effect. Both functions use `duration_ratio` in the same
+direction; choose `time_stretch` when the output must fit an exact timeline.
 
 ```python
 import numpy as np
