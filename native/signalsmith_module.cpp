@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -157,15 +158,22 @@ void configure_engine(SignalsmithStretch<float> &stretch, size_t channels,
  * coordinates are integers, so a genuinely constant curve can differ from
  * the ideal line by one sample after rounding. For a changing curve,
  * outputSeek() must be primed at the first segment's local rate. */
-float warp_seek_rate(const std::vector<std::pair<int64_t, int64_t>> &markers) {
+bool constant_warp_ratio(const std::vector<std::pair<int64_t, int64_t>> &markers) {
     double overall_ratio = static_cast<double>(markers.back().second) /
                            static_cast<double>(markers.back().first);
-    bool constant_ratio = std::all_of(markers.begin(), markers.end(),
-                                      [&](const auto &marker) {
+    return std::all_of(markers.begin(), markers.end(),
+                       [&](const auto &marker) {
         return std::abs(static_cast<double>(marker.second) -
                         static_cast<double>(marker.first) * overall_ratio) <= 1.0;
     });
-    if (constant_ratio) return static_cast<float>(1.0 / overall_ratio);
+}
+
+float warp_seek_rate(const std::vector<std::pair<int64_t, int64_t>> &markers) {
+    if (constant_warp_ratio(markers)) {
+        double overall_ratio = static_cast<double>(markers.back().second) /
+                               static_cast<double>(markers.back().first);
+        return static_cast<float>(1.0 / overall_ratio);
+    }
     return static_cast<float>(static_cast<double>(markers[1].first) /
                               static_cast<double>(markers[1].second));
 }
@@ -345,11 +353,11 @@ StretchDiagnostics run_signalsmith_warp(
 
     stretch.outputSeek(in_full, seek_len);
 
-    std::vector<float> out_buf(channels * target_frames, 0.0f);
+    std::fill(output_data, output_data + channels * target_frames, 0.0f);
     ChannelPointers<float> out_full;
     out_full.ptrs.resize(channels);
     for (size_t c = 0; c < channels; ++c) {
-        out_full.ptrs[c] = out_buf.data() + c * target_frames;
+        out_full.ptrs[c] = output_data + c * target_frames;
     }
 
     // The pre-roll's front cut (seek_len real input frames given to
@@ -426,10 +434,6 @@ StretchDiagnostics run_signalsmith_warp(
     diag.block_samples = stretch.blockSamples();
     diag.interval_samples = stretch.intervalSamples();
 
-    for (size_t c = 0; c < channels; ++c) {
-        std::memcpy(output_data + c * target_frames, out_buf.data() + c * target_frames,
-                    target_frames * sizeof(float));
-    }
     return diag;
 }
 
@@ -437,7 +441,7 @@ StretchDiagnostics run_signalsmith_warp(
  * scaled) when `frames` is below the pre-roll requirement, same "pad and
  * trim" idea as the exact() path, then delegates to
  * run_signalsmith_warp() and trims back to the caller's target_frames. */
-StretchDiagnostics run_signalsmith(
+StretchDiagnostics run_signalsmith_uncompensated(
     const std::vector<const float *> &input, size_t channels, size_t frames,
     size_t sample_rate, size_t target_frames,
     const std::vector<std::pair<int64_t, int64_t>> &markers, double pitch_scale,
@@ -511,6 +515,73 @@ StretchDiagnostics run_signalsmith(
     for (size_t c = 0; c < channels; ++c) {
         std::memcpy(output_data + c * target_frames,
                     proc_output.data() + c * proc_target, target_frames * sizeof(float));
+    }
+    return diag;
+}
+
+/** The analysis window reads source material one inputLatency() behind the
+ * scheduled source position. After a ratio turn, a transient therefore lands
+ * about (new_ratio - first_ratio) * inputLatency() away from its marker.
+ * Shift every scheduled marker by that input lookback, preserving the first
+ * segment's slope, and provide a silent tail so the final marker can shift
+ * too. The caller still receives exactly the original target length.
+ * Constant-ratio maps stay on the existing bit-identical path. */
+StretchDiagnostics run_signalsmith(
+    const std::vector<const float *> &input, size_t channels, size_t frames,
+    size_t sample_rate, size_t target_frames,
+    const std::vector<std::pair<int64_t, int64_t>> &markers, double pitch_scale,
+    bool preserve_formants, const std::string &quality, float *output_data) {
+    if (markers.size() == 2 || constant_warp_ratio(markers)) {
+        return run_signalsmith_uncompensated(
+            input, channels, frames, sample_rate, target_frames, markers,
+            pitch_scale, preserve_formants, quality, output_data);
+    }
+
+    SignalsmithStretch<float> probe(kSeed);
+    configure_engine(probe, channels, sample_rate, pitch_scale,
+                     preserve_formants, quality);
+    const int lookback_samples = probe.inputLatency();
+    if (lookback_samples <= 0) {
+        return run_signalsmith_uncompensated(
+            input, channels, frames, sample_rate, target_frames, markers,
+            pitch_scale, preserve_formants, quality, output_data);
+    }
+    const size_t lookback = static_cast<size_t>(lookback_samples);
+    const double first_ratio = static_cast<double>(markers[1].second) /
+                               static_cast<double>(markers[1].first);
+    const size_t engine_limit = static_cast<size_t>(std::numeric_limits<int>::max());
+    const double tail_exact = first_ratio * static_cast<double>(lookback);
+    if (frames > engine_limit - lookback ||
+        target_frames > engine_limit ||
+        tail_exact >= static_cast<double>(engine_limit - target_frames)) {
+        throw std::overflow_error("signalsmith: compensated warp exceeds engine frame limit");
+    }
+    const size_t output_tail = static_cast<size_t>(std::llround(tail_exact));
+    const size_t proc_frames = frames + lookback;
+    const size_t proc_target = target_frames + output_tail;
+
+    std::vector<std::vector<float>> padded(
+        channels, std::vector<float>(proc_frames, 0.0f));
+    std::vector<const float *> proc_ptrs(channels);
+    for (size_t c = 0; c < channels; ++c) {
+        std::memcpy(padded[c].data(), input[c], frames * sizeof(float));
+        proc_ptrs[c] = padded[c].data();
+    }
+    auto proc_markers = markers;
+    for (size_t i = 1; i < proc_markers.size(); ++i) {
+        proc_markers[i].first += static_cast<int64_t>(lookback);
+        proc_markers[i].second += static_cast<int64_t>(output_tail);
+    }
+
+    std::vector<float> proc_output(channels * proc_target, 0.0f);
+    StretchDiagnostics diag = run_signalsmith_uncompensated(
+        proc_ptrs, channels, proc_frames, sample_rate, proc_target,
+        proc_markers, pitch_scale, preserve_formants, quality, proc_output.data());
+    diag.padded = true;
+    for (size_t c = 0; c < channels; ++c) {
+        std::memcpy(output_data + c * target_frames,
+                    proc_output.data() + c * proc_target,
+                    target_frames * sizeof(float));
     }
     return diag;
 }

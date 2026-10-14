@@ -367,9 +367,12 @@ It has the input and option limits described above. For the Rubber Band or
 Signalsmith sound and controls, select either backend explicitly. Their
 markers guide the engines rather than guarantee transient placement: the
 same test placed the inside click about 154 ms early with Rubber Band and
-175 ms late with Signalsmith. Signalsmith placed clicks before and after
-the changed region within 0.4 ms after its pre-roll fix; Rubber Band left
-later clicks about 57 ms late. Listen to each render for your material.
+175 ms late with Signalsmith before the later ratio-turn fixes. With smaller
+process blocks, Rubber Band now places that click about 32 ms early and later
+clicks about 13 ms early. Signalsmith now compensates its analysis-window
+lookback at ratio turns; the same inside click lands within 5 ms, with clicks
+outside the region within 0.4 ms. These are synthetic-click measurements,
+not universal bounds; listen to each render for your material.
 See the [2026-10-14 change report](docs/time-warp-fix-2026-10-14.md) for
 measurements, implementation details, validation, and remaining limits.
 

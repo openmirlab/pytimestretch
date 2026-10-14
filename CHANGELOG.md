@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Compensate Signalsmith's analysis-window lookback when `time_warp` changes
+  ratio, while retaining constant-ratio parity and exact output length. In
+  the issue #12 4× local-warp repro, the inside click moves from about 175 ms
+  late to within 5 ms; tested across 22.05–96 kHz and both quality presets.
+- Use 256-frame Rubber Band process blocks for key-frame warps (plain
+  stretches keep 4096). In the same repro, the inside click moves from about
+  154 ms early to about 32 ms early and later clicks from about 57 ms late
+  to about 13 ms early. It remains an approximate-placement backend.
 - Make Bungee Basic the default `time_warp` renderer and accept
   `backend="bungee"` explicitly. The existing marker format now reaches
   Bungee's measured click placement without manual column reversal.

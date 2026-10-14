@@ -664,6 +664,68 @@ def test_warp_ratio_change_does_not_shift_unwarped_material(
     assert max(errors) < 3.0, errors
 
 
+@pytest.mark.parametrize(
+    ("first_ratio", "middle_ratio"),
+    [(0.5, 2.0), (1.0, 0.5), (1.0, 2.0), (1.0, 4.0), (2.0, 0.5), (2.0, 4.0)],
+)
+def test_warp_ratio_change_places_material_inside_and_after_region(
+    first_ratio: float, middle_ratio: float
+) -> None:
+    """Analysis-window lookback must not displace a changed-ratio region."""
+    sr = SR
+    x = (np.random.default_rng(0).standard_normal(10 * sr) * 0.002).astype(np.float32)
+    clicks = (4.5, 5.6)
+    for t in clicks:
+        i = round(t * sr)
+        x[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+
+    output_at_4 = round(4 * first_ratio * sr)
+    output_at_5 = round((4 * first_ratio + middle_ratio) * sr)
+    output_end = output_at_5 + 5 * sr
+    markers = [(0, 0), (4 * sr, output_at_4), (5 * sr, output_at_5),
+               (10 * sr, output_end)]
+    y = pytimestretch.time_warp(x, sr, markers=markers, backend="signalsmith")
+
+    assert len(y) == output_end
+    errors = []
+    for t in clicks:
+        expected = float(np.interp(
+            t, [0, 4, 5, 10],
+            [0, 4 * first_ratio, 4 * first_ratio + middle_ratio,
+             4 * first_ratio + middle_ratio + 5],
+        ))
+        a, b = round((expected - 0.25) * sr), round((expected + 0.25) * sr)
+        peak = a + int(np.argmax(np.abs(y[a:b])))
+        errors.append(abs(peak / sr - expected) * 1000)
+    assert max(errors) < 12.0, errors
+
+
+@pytest.mark.parametrize("sample_rate", [22_050, 44_100, 48_000, 96_000])
+@pytest.mark.parametrize("quality", ["high", "balanced"])
+def test_local_fourfold_warp_click_alignment_across_presets(
+    sample_rate: int, quality: str
+) -> None:
+    sr = sample_rate
+    x = (np.random.default_rng(0).standard_normal(10 * sr) * 0.002).astype(np.float32)
+    clicks = (3.6, 4.5, 5.6, 8.6)
+    for t in clicks:
+        i = round(t * sr)
+        x[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+    markers = [(0, 0), (4 * sr, 4 * sr), (5 * sr, 8 * sr), (10 * sr, 13 * sr)]
+    y = pytimestretch.time_warp(
+        x, sr, markers=markers, backend="signalsmith", quality=quality
+    )
+
+    expected = (3.6, 6.0, 8.6, 11.6)
+    errors = []
+    for t in expected:
+        a, b = round((t - 0.2) * sr), round((t + 0.2) * sr)
+        peak = a + int(np.argmax(np.abs(y[a:b])))
+        errors.append(abs(peak / sr - t) * 1000)
+    assert len(y) == 13 * sr
+    assert max(errors) < 5.0, errors
+
+
 # --- Regression: dense click-train localization at 20-50 ms spacing -------
 #
 # A *different* measurement from the windowed-dB check above: a marker on
