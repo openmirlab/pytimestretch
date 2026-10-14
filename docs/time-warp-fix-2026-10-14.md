@@ -42,6 +42,8 @@ R3 到達原始四倍案例的 4 s 標記時，內部已消耗 176640 個輸入�
 
 Issue #12 仍追蹤 Rubber Band 的剩餘誤差，以及密集瞬態等素材上的定位與音質限制；這些測量不是所有素材的精度保證。
 
+[獨立 C++ 重現程式](repros/issue12-rubberband-r3/README.md)直接連結專案釘選的 Rubber Band v4.0.0 原始碼，不經過 Python binding，仍量到相同案例區內約提前 32 ms、區後約提前 13 ms。這證實剩餘偏移不只出現在 pytimestretch 的包裝路徑。
+
 ## 驗證範圍
 
 - 專案完整測試：401 passed、2 deselected；`ruff check .` 通過。
