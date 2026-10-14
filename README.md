@@ -370,6 +370,8 @@ same test placed the inside click about 154 ms early with Rubber Band and
 175 ms late with Signalsmith. Signalsmith placed clicks before and after
 the changed region within 0.4 ms after its pre-roll fix; Rubber Band left
 later clicks about 57 ms late. Listen to each render for your material.
+See the [2026-10-14 change report](docs/time-warp-fix-2026-10-14.md) for
+measurements, implementation details, validation, and remaining limits.
 
 ### Coming from librosa or pyrubberband
 
