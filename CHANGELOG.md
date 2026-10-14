@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Correct the Signalsmith `time_warp` pre-roll rate for multi-marker curves.
+  On the measured 4× local warp, clicks outside the changed region move from
+  about 14 ms late to within 0.4 ms of the marker curve. Abrupt changes can
+  still displace clicks inside the region.
+- Document `time_scrub` as the measured alignment path for abrupt marker
+  changes and pin the 4× click placement case in a regression test.
+
 ## [0.2.0] - 2026-09-25
 
 Source tag available from GitHub; not published to PyPI.

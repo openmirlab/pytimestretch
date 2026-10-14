@@ -349,7 +349,27 @@ markers guide the engine rather than guarantee sample-exact alignment of
 an audible attack. For Signalsmith, markers at least 100 ms apart are a
 useful starting point from the measured cases. Dense markers and abrupt
 changes in local stretch ratio can smear or lose transients with either
-engine. Listen to the result for your material.
+engine. In one 44.1 kHz click test, stretching only source seconds 4–5 by
+4× placed a Rubber Band click about 154 ms early and later clicks about
+57 ms late; Signalsmith placed the stretched click about 175 ms late.
+These are measurements of this input and build, not general error bounds.
+Listen to the result for your material.
+
+For **marker placement on a rhythmic timeline**, use `time_scrub` with the
+same points in reverse column order. It placed the clicks within 2 ms on
+the same 4× test:
+
+```python
+markers = [(0, 0), (4 * sr, 4 * sr), (5 * sr, 8 * sr), (len(audio), 13 * sr)]
+aligned = pts.time_scrub(
+    audio, sr, control_points=[(output, source) for source, output in markers]
+)
+```
+
+`time_scrub` uses Bungee Basic's granular processing and has its own sound,
+transient, channel, sample-rate, and pitch limits described above. It does
+not provide `time_warp`'s `quality` or formant controls. Check the render by
+listening as well as by measuring positions.
 
 ### Coming from librosa or pyrubberband
 

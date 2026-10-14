@@ -26,7 +26,12 @@ audio-tool category remains a separate policy follow-up.
   key-frame map without the leading `(0, 0)`) and
   `native/signalsmith_module.cpp` (`.exact()` for two markers, a scheduled
   `outputSeek`/`process`/`flush` stream for more, fixed seed, short input
-  zero-padded) implement it. `tests/contract/` runs against every built engine
+  zero-padded) implement it. The Signalsmith multi-marker pre-roll must use
+  the first segment's playback rate: using the whole clip's average rate
+  displaced all clicks outside a local 4× warp by about 14 ms. Abrupt
+  ratio changes still displace clicks inside the region on both engines;
+  use `time_scrub` when marker placement takes priority over their distinct
+  sound and options. `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
 - `extreme.py` owns the separate `extreme_stretch` operation backed by
   libpaulstretch v0.3.0 through `_paulstretch`. It passes the requested

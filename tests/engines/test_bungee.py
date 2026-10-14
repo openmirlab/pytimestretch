@@ -44,6 +44,38 @@ def test_100_ms_click_train_alignment() -> None:
         assert abs(np.argmax(np.abs(region)) - 24) <= 2
 
 
+def test_abrupt_fourfold_warp_places_clicks_near_marker_curve() -> None:
+    sample_rate = 44_100
+    frames = 10 * sample_rate
+    audio = (np.random.default_rng(0).standard_normal(frames) * 0.002).astype(
+        np.float32
+    )
+    clicks = np.arange(0.6, 9.6, 1.0)
+    for t in clicks:
+        i = round(t * sample_rate)
+        audio[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+
+    output = pts.time_scrub(
+        audio,
+        sample_rate,
+        control_points=[
+            (0, 0),
+            (4 * sample_rate, 4 * sample_rate),
+            (8 * sample_rate, 5 * sample_rate),
+            (13 * sample_rate, frames),
+        ],
+    )
+    expected = np.interp(clicks, [0, 4, 5, 10], [0, 4, 8, 13])
+    errors_ms = []
+    for target in expected:
+        start = round((target - 0.1) * sample_rate)
+        stop = round((target + 0.1) * sample_rate)
+        peak = start + int(np.argmax(np.abs(output[start:stop])))
+        errors_ms.append(abs(peak / sample_rate - target) * 1000)
+    assert len(output) == 13 * sample_rate
+    assert max(errors_ms) < 5.0, errors_ms
+
+
 def test_global_pitch_is_independent_of_hold_speed() -> None:
     sample_rate = 48_000
     frames = 2 * sample_rate
