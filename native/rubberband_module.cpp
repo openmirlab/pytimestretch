@@ -134,12 +134,12 @@ OfflineResult run_offline(const std::vector<const float *> &input,
                                    pitch_scale);
     int engine_version = stretcher.getEngineVersion();
 
-    // A block size the header explicitly recommends bounding by
-    // getProcessSizeLimit() (524288 as of v3.3); 4096 is a plain,
-    // conservative per-call chunk well under that limit and under typical
-    // input lengths, so almost every real call still loops more than once
-    // (exercising the block loop, not just a single big call).
-    size_t block = std::min<size_t>(stretcher.getProcessSizeLimit(), 4096);
+    // R3 checks its key-frame map once per process() call. A 4096-frame
+    // block can carry it far past an abrupt ratio turn before the new ratio
+    // takes effect; 256-frame blocks substantially reduce measured warp
+    // displacement. Keep the original 4096-frame block for plain stretches.
+    size_t block = std::min<size_t>(stretcher.getProcessSizeLimit(),
+                                    key_frame_map != nullptr ? 256 : 4096);
     if (block == 0) {
         throw std::runtime_error(
             "rubberband: getProcessSizeLimit() returned 0");

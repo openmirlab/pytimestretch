@@ -30,6 +30,7 @@ import math
 import numpy as np
 import pytest
 
+import pytimestretch
 from pytimestretch import _rubberband as rb
 
 SR = 44100
@@ -432,6 +433,35 @@ def test_marker_placement_alternating_ratio_within_measured_bound(
     assert missing <= ALT_MAX_MISSING[quality]
     if offsets:
         assert max(offsets) <= ALT_MAX_OFFSET_TOLERANCE_MS[quality]
+
+
+@pytest.mark.parametrize("local_ratio,inside_bound_ms", [(2, 20.0), (4, 40.0)])
+@pytest.mark.parametrize("sr", [22_050, 44_100, 48_000, 96_000])
+def test_local_warp_uses_small_process_blocks_at_ratio_turns(
+    local_ratio: int, inside_bound_ms: float, sr: int
+) -> None:
+    x = (np.random.default_rng(0).standard_normal(10 * sr) * 0.002).astype(np.float32)
+    clicks = np.arange(0.6, 9.6, 1.0)
+    for t in clicks:
+        i = round(t * sr)
+        x[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+    markers = [(0, 0), (4 * sr, 4 * sr),
+               (5 * sr, (4 + local_ratio) * sr),
+               (10 * sr, (9 + local_ratio) * sr)]
+    y = pytimestretch.time_warp(x, sr, markers=markers, backend="rubberband")
+
+    expected = np.interp(
+        clicks, [0, 4, 5, 10], [0, 4, 4 + local_ratio, 9 + local_ratio]
+    )
+    errors = []
+    for t in expected:
+        a, b = round((t - 0.15) * sr), round((t + 0.15) * sr)
+        peak = a + int(np.argmax(np.abs(y[a:b])))
+        errors.append(abs(peak / sr - t) * 1000)
+    assert len(y) == (9 + local_ratio) * sr
+    assert max(errors[:4]) < 2.0
+    assert errors[4] < inside_bound_ms, errors
+    assert max(errors[5:]) < 20.0, errors
 
 
 # --- Speed order (step 3 measurement) ------------------------------------

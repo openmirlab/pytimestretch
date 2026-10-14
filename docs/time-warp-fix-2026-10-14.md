@@ -28,10 +28,19 @@ warped = pts.time_warp(
 )
 ```
 
-預設 Bungee 路徑支援單聲道或雙聲道、8–192 kHz、±24 半音。它不支援 `formants="preserve"` 或 `quality="balanced"`；指定這些選項會得到 `UnsupportedOptionError`。Bungee 的顆粒式處理可能改變密集瞬態的音色，因此定位精度與聽感應分別評估。明確指定 Rubber Band 或 Signalsmith 時，突變速區內的 click 仍可能明顯偏離標記；issue #12 會繼續追蹤，這次變更不宣稱修好了兩個引擎的所有定位問題。
+預設 Bungee 路徑支援單聲道或雙聲道、8–192 kHz、±24 半音。它不支援 `formants="preserve"` 或 `quality="balanced"`；指定這些選項會得到 `UnsupportedOptionError`。Bungee 的顆粒式處理可能改變密集瞬態的音色，因此定位精度與聽感應分別評估。
+
+## 後續修正：明確指定的後端
+
+同日的後續實驗找到 Signalsmith 的主要原因：引擎以分析視窗讀取較早的來源位置，變速後的 click 偏移約為「新倍率與第一段倍率之差 × 輸入分析延遲」。內部把變速標記沿來源軸後移 `inputLatency()`，沿輸出軸後移第一段對應的影格數，並補靜音尾段後裁回原本輸出長度。原始四倍案例區內約晚 175 ms 的 click 降至約 5 ms 內；在 22.05、44.1、48、96 kHz 的 high／balanced 合成 click 測試中，最大約 1.4 ms。等比例標記保留原本的渲染路徑。
+
+Rubber Band R3 每次 `process()` 才檢查 keyframe。把有標記的 warp 輸入區塊從 4096 縮為 256 影格後，原始案例的區內誤差從約提前 154 ms 降到約提前 32 ms，區後從約延遲 57 ms 變成約提前 13 ms；一般 `time_stretch` 仍用 4096 影格。縮到 64 影格沒有進一步改善區內誤差。直接平移 keyframe 會使結果跳到不同的偏移，不能當成穩定校正。單純按標記分段渲染雖改善 click 位置，接縫卻會產生波形跳變、音量凹陷或瞬態衰減，因此沒有採用。
+
+Issue #12 仍追蹤 Rubber Band 的剩餘誤差，以及密集瞬態等素材上的定位與音質限制；這些測量不是所有素材的精度保證。
 
 ## 驗證範圍
 
-- 專案完整測試：379 passed、2 deselected；`ruff check .` 通過。
+- 專案完整測試：401 passed、2 deselected；`ruff check .` 通過。
 - `uv build` 通過；從建出的 wheel 安裝後，在原始 44.1 kHz 重現案例中量得最大誤差 1.5 ms。
 - 額外測試涵蓋 22.05、44.1、48、96 kHz 及局部二、四、八倍變速，最大誤差 4.35 ms；在 4 s／5 s 標記前後 10 ms 的測試，最大誤差 2.31 ms。這些是合成 click 測量，並非對所有素材保證的誤差上限。
+- 後續修正另以相同重現音訊、獨立的邊界 click、跨採樣率測試和各引擎的回歸測試驗證；從 source distribution 建出的 wheel 安裝到 repo 外後，也重現了上述兩個後端的改善。

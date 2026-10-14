@@ -31,9 +31,12 @@ audio-tool category remains a separate policy follow-up.
   `outputSeek`/`process`/`flush` stream for more, fixed seed, short input
   zero-padded) implement it. The Signalsmith multi-marker pre-roll must use
   the first segment's playback rate: using the whole clip's average rate
-  displaced all clicks outside a local 4× warp by about 14 ms. Abrupt
-  ratio changes still displace clicks inside the region on both engines;
-  the default Bungee warp addresses marker-priority calls, with the same
+  displaced all clicks outside a local 4× warp by about 14 ms. The
+  Signalsmith warp path now shifts internal markers and pads the tail by its
+  analysis-window lookback; the issue #12 inside click is within 5 ms.
+  Rubber Band uses 256-frame process blocks for mapped warps, reducing the
+  same inside offset to about 32 ms, but still does not guarantee placement.
+  The default Bungee warp addresses marker-priority calls, with the same
   mono/stereo, sample-rate, pitch and option limits as `time_scrub`.
   `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
