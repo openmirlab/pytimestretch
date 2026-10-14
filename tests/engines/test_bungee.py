@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 import pytimestretch as pts
 
@@ -44,7 +45,8 @@ def test_100_ms_click_train_alignment() -> None:
         assert abs(np.argmax(np.abs(region)) - 24) <= 2
 
 
-def test_abrupt_fourfold_warp_places_clicks_near_marker_curve() -> None:
+@pytest.mark.parametrize("local_ratio", [2, 4])
+def test_local_warp_places_clicks_near_marker_curve(local_ratio: int) -> None:
     sample_rate = 44_100
     frames = 10 * sample_rate
     audio = (np.random.default_rng(0).standard_normal(frames) * 0.002).astype(
@@ -55,25 +57,67 @@ def test_abrupt_fourfold_warp_places_clicks_near_marker_curve() -> None:
         i = round(t * sample_rate)
         audio[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
 
+    control_points = [
+        (0, 0),
+        (4 * sample_rate, 4 * sample_rate),
+        ((4 + local_ratio) * sample_rate, 5 * sample_rate),
+        ((9 + local_ratio) * sample_rate, frames),
+    ]
     output = pts.time_scrub(
         audio,
         sample_rate,
-        control_points=[
-            (0, 0),
-            (4 * sample_rate, 4 * sample_rate),
-            (8 * sample_rate, 5 * sample_rate),
-            (13 * sample_rate, frames),
-        ],
+        control_points=control_points,
     )
-    expected = np.interp(clicks, [0, 4, 5, 10], [0, 4, 8, 13])
+    warped = pts.time_warp(
+        audio,
+        sample_rate,
+        markers=[(source, target) for target, source in control_points],
+        backend="bungee",
+    )
+    np.testing.assert_array_equal(warped, output)
+    default_warp = pts.time_warp(
+        audio,
+        sample_rate,
+        markers=[(source, target) for target, source in control_points],
+    )
+    np.testing.assert_array_equal(default_warp, output)
+    expected = np.interp(
+        clicks, [0, 4, 5, 10], [0, 4, 4 + local_ratio, 9 + local_ratio]
+    )
     errors_ms = []
     for target in expected:
         start = round((target - 0.1) * sample_rate)
         stop = round((target + 0.1) * sample_rate)
         peak = start + int(np.argmax(np.abs(output[start:stop])))
         errors_ms.append(abs(peak / sample_rate - target) * 1000)
-    assert len(output) == 13 * sample_rate
+    assert len(output) == (9 + local_ratio) * sample_rate
     assert max(errors_ms) < 5.0, errors_ms
+
+
+@pytest.mark.parametrize("source_time", [3.99, 4.0, 4.01, 4.99, 5.0, 5.01])
+def test_fourfold_warp_places_clicks_near_ratio_turns(source_time: float) -> None:
+    sample_rate = 44_100
+    frames = 10 * sample_rate
+    audio = (np.random.default_rng(0).standard_normal(frames) * 0.002).astype(
+        np.float32
+    )
+    i = round(source_time * sample_rate)
+    audio[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+    output = pts.time_warp(
+        audio,
+        sample_rate,
+        markers=[
+            (0, 0),
+            (4 * sample_rate, 4 * sample_rate),
+            (5 * sample_rate, 8 * sample_rate),
+            (frames, 13 * sample_rate),
+        ],
+    )
+    expected = np.interp(source_time, [0, 4, 5, 10], [0, 4, 8, 13])
+    start = round((expected - 0.15) * sample_rate)
+    stop = round((expected + 0.15) * sample_rate)
+    peak = start + int(np.argmax(np.abs(output[start:stop])))
+    assert abs(peak / sample_rate - expected) * 1000 < 5.0
 
 
 def test_global_pitch_is_independent_of_hold_speed() -> None:

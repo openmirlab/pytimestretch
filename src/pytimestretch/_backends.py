@@ -1,6 +1,6 @@
 """Backend registry — the sole owner of backend names and module paths.
 
-Maps a public backend name (``"rubberband"``, ``"signalsmith"``) to a lazy
+Maps a shared stretch/pitch backend name (``"rubberband"``, ``"signalsmith"``) to a lazy
 loader for its native module, resolved into a ``Backend(render,
 supported_quality)`` pair. Each native module implements the shared
 contract ``render(buffer, sample_rate, markers, pitch_scale,
@@ -86,7 +86,11 @@ def load_backend(name: object) -> Backend:
 
 
 def available_backends() -> tuple[str, ...]:
-    """Return the names of registered backends whose native module loads.
+    """Return available shared stretch/pitch backends.
+
+    Both can also render ``time_warp`` when explicitly selected. Bungee
+    Basic is ``time_warp``'s default and ``time_scrub``'s engine; it has
+    a narrower contract and lives outside this shared backend registry.
 
     Iterates the live registry (not the frozen ``BACKEND_NAMES``) and tries
     each loader, so a backend registered after import time (tests inject a

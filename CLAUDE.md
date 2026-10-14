@@ -14,8 +14,11 @@ audio-tool category remains a separate policy follow-up.
   No PyPI publishing is approved. Keep the
   `Private :: Do Not Upload` classifier as the package-upload guard.
 - `stretch.py` holds the public functions `time_stretch`, `pitch_shift`,
-  and `time_warp`, which all build a marker array and share one private
-  render path (buffer copy, dispatch, result checks, dtype restore).
+  and `time_warp`. Rubber Band/Signalsmith calls share one private render
+  path (buffer copy, dispatch, result checks, dtype restore); the default
+  `time_warp` path reverses validated marker columns and calls `time_scrub`
+  for Bungee Basic's measured placement. `backend="rubberband"` or
+  `"signalsmith"` keeps the prior sound and broader options explicitly.
   `_validation.py` owns every input rule and the teaching errors for
   pyrubberband/librosa habits (`rate=`, `n_steps=`, `time_map=`, `rbargs=`,
   channels-first arrays). `_backends.py` owns backend names and native
@@ -30,8 +33,9 @@ audio-tool category remains a separate policy follow-up.
   the first segment's playback rate: using the whole clip's average rate
   displaced all clicks outside a local 4× warp by about 14 ms. Abrupt
   ratio changes still displace clicks inside the region on both engines;
-  use `time_scrub` when marker placement takes priority over their distinct
-  sound and options. `tests/contract/` runs against every built engine
+  the default Bungee warp addresses marker-priority calls, with the same
+  mono/stereo, sample-rate, pitch and option limits as `time_scrub`.
+  `tests/contract/` runs against every built engine
   plus a test-only fake; `tests/engines/` pins engine-specific measurements.
 - `extreme.py` owns the separate `extreme_stretch` operation backed by
   libpaulstretch v0.3.0 through `_paulstretch`. It passes the requested

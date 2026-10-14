@@ -1,8 +1,9 @@
 """Offline position-curve rendering through Bungee Basic.
 
-The output-first curve may hold or reverse the source playhead. This is a
-separate creative contract from the forward-only ``time_warp`` markers and
-the shared exact-length backend registry.
+The output-first curve may hold or reverse the source playhead. ``time_warp``
+also delegates to this renderer for its default forward-only Bungee path,
+after reversing its source/output marker columns. The Rubber Band and
+Signalsmith backend registry keeps a separate processing contract.
 
 Reads: ._bungee, ._validation, .errors.
 """
