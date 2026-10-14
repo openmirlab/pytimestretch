@@ -153,6 +153,23 @@ void configure_engine(SignalsmithStretch<float> &stretch, size_t channels,
     }
 }
 
+/** Keep constant-ratio marker maps on exact()'s pre-roll rate. Marker target
+ * coordinates are integers, so a genuinely constant curve can differ from
+ * the ideal line by one sample after rounding. For a changing curve,
+ * outputSeek() must be primed at the first segment's local rate. */
+float warp_seek_rate(const std::vector<std::pair<int64_t, int64_t>> &markers) {
+    double overall_ratio = static_cast<double>(markers.back().second) /
+                           static_cast<double>(markers.back().first);
+    bool constant_ratio = std::all_of(markers.begin(), markers.end(),
+                                      [&](const auto &marker) {
+        return std::abs(static_cast<double>(marker.second) -
+                        static_cast<double>(marker.first) * overall_ratio) <= 1.0;
+    });
+    if (constant_ratio) return static_cast<float>(1.0 / overall_ratio);
+    return static_cast<float>(static_cast<double>(markers[1].first) /
+                              static_cast<double>(markers[1].second));
+}
+
 /**
  * Run the Signalsmith Stretch whole-buffer pipeline for the plain
  * two-marker case: construct with `kSeed`, configure, and call `.exact()`.
@@ -269,11 +286,10 @@ StretchDiagnostics run_signalsmith_exact(const std::vector<const float *> &input
  * buffer:
  *
  *  1. `outputSeek(input, seek_len)` where `seek_len =
- *     outputSeekLength(overall playbackRate)` — the same pre-roll `.exact()`
- *     would use for a single-ratio stretch of this duration; the pre-roll's
- *     job is priming the STFT analysis window with context, not tracking
- *     any one segment's local ratio, so the overall ratio is the right
- *     input here, same as `.exact()` uses for the whole buffer.
+ *     outputSeekLength(first-segment playbackRate)`. `outputSeek()` infers
+ *     its own pre-roll rate from this length. Using the clip-wide average
+ *     rate shifts transients even in unwarped material when the first
+ *     segment has a different rate.
  *  2. Build "checkpoints" (shifted_source, shifted_target) from the
  *     markers: shift every source coordinate left by `seek_len` (frames
  *     already consumed as pre-roll context, clamped at 0), and shift every
@@ -320,9 +336,7 @@ StretchDiagnostics run_signalsmith_warp(
     configure_engine(stretch, channels, sample_rate, pitch_scale,
                       preserve_formants, quality);
 
-    double overall_rate =
-        static_cast<double>(frames) / static_cast<double>(target_frames);
-    int seek_len = stretch.outputSeekLength(static_cast<float>(overall_rate));
+    int seek_len = stretch.outputSeekLength(warp_seek_rate(markers));
     if (seek_len < 0) seek_len = 0;
     // Caller (run_signalsmith_warp_padded) guarantees frames > seek_len.
 
@@ -439,9 +453,7 @@ StretchDiagnostics run_signalsmith(
     SignalsmithStretch<float> probe(kSeed);
     configure_engine(probe, channels, sample_rate, pitch_scale,
                       preserve_formants, quality);
-    double overall_rate =
-        static_cast<double>(frames) / static_cast<double>(target_frames);
-    int seek_len = probe.outputSeekLength(static_cast<float>(overall_rate));
+    int seek_len = probe.outputSeekLength(warp_seek_rate(markers));
     if (seek_len < 0) seek_len = 0;
 
     if (frames > static_cast<size_t>(seek_len)) {

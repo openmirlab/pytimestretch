@@ -1,19 +1,22 @@
 """Backend-neutral public entry points: time_stretch, pitch_shift, time_warp.
 
 All three validate their own parameters (audio/sample_rate plus whichever of
-duration_ratio/semitones/formants/quality/markers apply) via ``_validation``,
-build a native-contract-v2 marker array, and funnel into the single private
-``_render`` helper, which is the sole owner of the buffer copy into the
+duration_ratio/semitones/formants/quality/markers apply) via ``_validation``.
+Rubber Band and Signalsmith calls build a native-contract-v2 marker array and
+funnel into the single private ``_render`` helper, which owns the buffer copy into the
 native ``(channels, frames)`` float32 layout, backend resolution and its
 quality-capability check, dispatch, ``EngineError`` wrapping, result checks,
-and conversion back to the caller's original layout/dtype. Backend selection
+and conversion back to the caller's original layout/dtype. ``time_warp``'s
+default Bungee path reverses the validated marker columns and delegates to
+``time_scrub``; this preserves Bungee's narrower input/option contract.
+Backend selection
 and native-module loading are owned by ``_backends``; validation itself
 (audio/sample-rate/ratio/semitones/formants/quality/marker checks, teaching-
 error text) lives in ``_validation``. Validation errors are always raised
 before a backend is resolved, so an unavailable or capability-limited
 backend never masks a bad call.
 
-Reads: ._backends, ._validation, .errors.
+Reads: ._backends, ._validation, .errors, .scrub.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from ._validation import (
     _target_frames,
 )
 from .errors import EngineError, PytimestretchError, UnsupportedOptionError
+from .scrub import time_scrub
 
 __all__ = ["pitch_shift", "time_stretch", "time_warp"]
 
@@ -317,11 +321,12 @@ def time_warp(
     semitones: float = 0.0,
     formants: str = "shift",
     quality: str = "high",
-    backend: str = "rubberband",
+    backend: str = "bungee",
     **unexpected: object,
 ) -> np.ndarray:
     """Warp ``audio`` to align source frames to target frames, with optional
-    pitch shift.
+    pitch shift. Bungee Basic is the default for marker placement; select
+    ``backend="rubberband"`` or ``"signalsmith"`` for their sound and options.
 
     Unlike ``time_stretch``'s single global ratio, ``time_warp`` stretches
     non-uniformly according to ``markers``: a sequence of
@@ -350,8 +355,12 @@ def time_warp(
         See ``time_stretch``.
     quality : {"high", "balanced"}, default "high"
         See ``time_stretch``.
-    backend : str, default "rubberband"
-        See ``time_stretch``.
+    backend : {"bungee", "rubberband", "signalsmith"}, default "bungee"
+        ``"bungee"`` follows the marker curve through ``time_scrub`` for
+        tighter measured transient placement. It supports mono/stereo audio
+        at 8–192 kHz and pitch shifts within ±24 semitones, but not formant
+        preservation or the ``"balanced"`` quality preset. The other
+        backends retain their own sound and broader input/options contract.
 
     Returns
     -------
@@ -397,6 +406,22 @@ def time_warp(
     semitones = _check_semitones(semitones)
     preserve_formants = _check_formants(formants)
     quality = _check_quality(quality)
+
+    if backend == "bungee":
+        if preserve_formants:
+            raise UnsupportedOptionError(
+                "backend 'bungee' does not support formants='preserve'"
+            )
+        if quality != "high":
+            raise UnsupportedOptionError(
+                "backend 'bungee' does not support quality='balanced'"
+            )
+        return time_scrub(
+            audio,
+            sample_rate,
+            control_points=markers_array[:, [1, 0]],
+            semitones=semitones,
+        )
 
     return _render(
         audio,

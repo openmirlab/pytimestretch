@@ -22,7 +22,7 @@ from conftest import (
 )
 
 import pytimestretch
-from pytimestretch.errors import InvalidAudioError
+from pytimestretch.errors import InvalidAudioError, UnsupportedOptionError
 
 # --- time_warp: length and marker equivalence --------------------------
 
@@ -66,6 +66,37 @@ def test_time_warp_markers_list_and_ndarray_equivalent(
         audio, SAMPLE_RATE, markers=markers_arr, backend="fake"
     )
     np.testing.assert_array_equal(out_list, out_arr)
+
+
+@pytest.mark.parametrize(
+    "option",
+    [{"quality": "balanced"}, {"formants": "preserve"}],
+)
+def test_bungee_warp_rejects_unsupported_engine_options(option: dict) -> None:
+    audio = np.zeros(SAMPLE_RATE, dtype=np.float32)
+    with pytest.raises(UnsupportedOptionError):
+        pytimestretch.time_warp(
+            audio, SAMPLE_RATE, markers=[(0, 0), (SAMPLE_RATE, SAMPLE_RATE)],
+            **option,
+        )
+
+
+@pytest.mark.parametrize(
+    "audio,sample_rate,semitones",
+    [
+        (np.zeros((44_100, 3), dtype=np.float32), 44_100, 0.0),
+        (np.zeros(44_100, dtype=np.float32), 1, 0.0),
+        (np.zeros(44_100, dtype=np.float32), 44_100, 25.0),
+    ],
+)
+def test_bungee_warp_reports_its_input_limits(
+    audio: np.ndarray, sample_rate: int, semitones: float
+) -> None:
+    with pytest.raises(InvalidAudioError):
+        pytimestretch.time_warp(
+            audio, sample_rate, markers=[(0, 0), (len(audio), len(audio))],
+            semitones=semitones,
+        )
 
 
 # --- time_warp: marker validation ---------------------------------------

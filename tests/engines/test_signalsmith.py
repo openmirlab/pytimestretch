@@ -636,6 +636,34 @@ def test_marker_placement_constant_ratio_tracks_plain_stretch(spacing_ms: int) -
     )
 
 
+@pytest.mark.parametrize("local_ratio", [2, 4])
+@pytest.mark.parametrize("quality", ["high", "balanced"])
+def test_warp_ratio_change_does_not_shift_unwarped_material(
+    local_ratio: int, quality: str
+) -> None:
+    """The pre-roll must follow the first segment, not the clip-wide average."""
+    sr = SR
+    x = (np.random.default_rng(0).standard_normal(10 * sr) * 0.002).astype(np.float32)
+    clicks = [0.6, 1.6, 2.6, 3.6, 5.6, 6.6, 7.6, 8.6]
+    for t in clicks:
+        i = round(t * sr)
+        x[i : i + 24] += np.hanning(24).astype(np.float32) * 0.8
+
+    markers = [(0, 0), (4 * sr, 4 * sr), (5 * sr, (4 + local_ratio) * sr),
+               (10 * sr, (9 + local_ratio) * sr)]
+    y = pytimestretch.time_warp(
+        x, sr, markers=markers, backend="signalsmith", quality=quality
+    )
+
+    errors = []
+    for t in clicks:
+        expected = t if t < 4 else t + local_ratio - 1
+        a, b = round((expected - 0.1) * sr), round((expected + 0.1) * sr)
+        peak = a + int(np.argmax(np.abs(y[a:b])))
+        errors.append(abs(peak / sr - expected) * 1000)
+    assert max(errors) < 3.0, errors
+
+
 # --- Regression: dense click-train localization at 20-50 ms spacing -------
 #
 # A *different* measurement from the windowed-dB check above: a marker on

@@ -65,13 +65,16 @@ See [NOTICE](NOTICE) for pinned revisions, copyright notices, and licenses.
 
 - `time_stretch`: change duration while keeping pitch, or shift both together.
 - `pitch_shift`: transpose audio without changing its duration.
-- `time_warp`: map source frame positions to output frame positions.
+- `time_warp`: map source frame positions to output frame positions; Bungee
+  Basic is the default when marker placement matters.
 - `extreme_stretch`: make long spectral textures with libpaulstretch;
   preserves the engine's requested factor and returns an approximate length.
 - `time_scrub`: draw the source playhead's path through output time, including
   holds and reversals, through Bungee Basic; returns an exact frame count.
-- Two interchangeable backends: `"rubberband"` (default) and `"signalsmith"`.
-- Formant preservation and `"high"` / `"balanced"` quality presets.
+- `"rubberband"` (default for stretch/pitch) and `"signalsmith"` share the
+  stretch/pitch backend contract. Both remain explicit `time_warp` choices.
+- Formant preservation and `"high"` / `"balanced"` quality presets with
+  Rubber Band and Signalsmith.
 - Mono or multichannel, frame-major NumPy arrays; exact output frame counts
   for the first three operations, preserved input dtype, and no input mutation.
 
@@ -164,7 +167,7 @@ assert warped.shape == audio.shape
 
 # Choose the other engine explicitly; there is no silent fallback.
 alternative = pts.time_stretch(audio, sr, duration_ratio=1.5, backend="signalsmith")
-print(pts.available_backends())  # ('rubberband', 'signalsmith') in a full build
+print(pts.available_backends())  # stretch/pitch backends: ('rubberband', 'signalsmith')
 ```
 
 For files, install `soundfile` separately with `uv pip install soundfile`,
@@ -289,10 +292,11 @@ after rendering.
 
 ## Processing contract
 
-This section covers the precise `time_stretch`, `pitch_shift`, and
-`time_warp` functions, which share Rubber Band and Signalsmith's backend
-contract. `extreme_stretch` and `time_scrub` have their own length and
-channel rules as described above.
+This section covers `time_stretch`, `pitch_shift`, and `time_warp` when
+`backend="rubberband"` or `"signalsmith"`; they share the same backend
+contract. The default `time_warp` call uses Bungee Basic and follows the
+mono/stereo, 8–192 kHz, and ±24-semitone limits stated for `time_scrub`
+above. `extreme_stretch` has its own rules.
 
 | Input or output | Rule |
 | --- | --- |
@@ -316,7 +320,10 @@ engine; it is not a promise of sample-identical bypass.
 
 ### Pitch, formants, and quality
 
-All three functions accept `backend`, `quality`, and `formants`.
+All three functions accept `backend`, `quality`, and `formants`. The default
+`time_warp` Bungee path accepts only `quality="high"` and `formants="shift"`;
+other values raise `UnsupportedOptionError`. Select Rubber Band or Signalsmith
+explicitly to use their quality presets or formant preservation.
 `time_stretch` and `time_warp` also accept an optional `semitones=0.0`;
 `pitch_shift` requires `semitones`.
 
@@ -344,12 +351,27 @@ two pairs, starting at `(0, 0)` and ending at `(len(audio), output_frames)`.
 Both columns must strictly increase; seconds and floating-point frame
 values are rejected.
 
-The final frame count is exact. **Transient placement is approximate**:
-markers guide the engine rather than guarantee sample-exact alignment of
-an audible attack. For Signalsmith, markers at least 100 ms apart are a
-useful starting point from the measured cases. Dense markers and abrupt
-changes in local stretch ratio can smear or lose transients with either
-engine. Listen to the result for your material.
+The final frame count is exact. Bungee Basic renders `time_warp` by following
+the source-position curve directly. In a 44.1 kHz click test, stretching only
+source seconds 4–5 by 4× placed clicks within 2 ms of the marker curve:
+
+```python
+markers = [(0, 0), (4 * sr, 4 * sr), (5 * sr, 8 * sr), (len(audio), 13 * sr)]
+aligned = pts.time_warp(audio, sr, markers=markers)
+```
+
+`backend="bungee"` is equivalent to this default and to `time_scrub` with
+the marker columns reversed. Bungee's granular processing has its own sound
+and can still smear transients; the measured error is not a universal bound.
+It has the input and option limits described above. For the Rubber Band or
+Signalsmith sound and controls, select either backend explicitly. Their
+markers guide the engines rather than guarantee transient placement: the
+same test placed the inside click about 154 ms early with Rubber Band and
+175 ms late with Signalsmith. Signalsmith placed clicks before and after
+the changed region within 0.4 ms after its pre-roll fix; Rubber Band left
+later clicks about 57 ms late. Listen to each render for your material.
+See the [2026-10-14 change report](docs/time-warp-fix-2026-10-14.md) for
+measurements, implementation details, validation, and remaining limits.
 
 ### Coming from librosa or pyrubberband
 

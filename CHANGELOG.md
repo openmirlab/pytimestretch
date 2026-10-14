@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Make Bungee Basic the default `time_warp` renderer and accept
+  `backend="bungee"` explicitly. The existing marker format now reaches
+  Bungee's measured click placement without manual column reversal.
+  Rubber Band and Signalsmith remain explicit choices for their sound,
+  broader channel/sample-rate support, formants, and quality presets.
+  Default warp calls now follow Bungee's mono/stereo, 8–192 kHz and
+  ±24-semitone limits; unsupported formant/quality options raise clearly.
+- Correct the Signalsmith `time_warp` pre-roll rate for multi-marker curves.
+  On the measured 4× local warp, clicks outside the changed region move from
+  about 14 ms late to within 0.4 ms of the marker curve. Abrupt changes can
+  still displace clicks inside the region.
+- Pin the 4× click placement case and ratio-turn clicks for the Bungee path;
+  document its measured placement and distinct sound/option limits.
+
 ## [0.2.0] - 2026-09-25
 
 Source tag available from GitHub; not published to PyPI.
